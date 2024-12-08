@@ -1,17 +1,14 @@
-//
-//  SnoozeYouLoseApp.swift
-//  SnoozeYouLose
-//
-//  Created by Danny Bloomstine on 11/8/24.
-//
-
 import SwiftUI
+import Firebase
 
 @main
 struct SnoozeYouLoseApp: App {
+    // Add this line for the AppDelegate
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            AlarmListView()
         }
     }
 }
