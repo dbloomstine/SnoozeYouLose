@@ -74,6 +74,7 @@ export default function Signup() {
       <div className="page">
         <div className="container" style={{ paddingTop: '60px' }}>
           <button
+            className="back-btn"
             onClick={() => {
               setIsVerifying(false)
               setVerificationCode('')
@@ -81,45 +82,30 @@ export default function Signup() {
               clearError()
               setScreen('signup')
             }}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
-              marginBottom: '2rem'
-            }}
           >
             ← Back
           </button>
 
-          <h1>Verify your number</h1>
-          <p style={{ marginBottom: '2rem' }}>
-            Enter the 4-digit code sent to {formatPhoneNumber(displayPhone)}
-          </p>
+          <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+            <span style={{ fontSize: '3rem', marginBottom: '1rem', display: 'block' }}>🔐</span>
+            <h1>Verify your number</h1>
+            <p>
+              Enter the 4-digit code sent to<br />
+              <strong style={{ color: 'var(--text-primary)' }}>{formatPhoneNumber(displayPhone)}</strong>
+            </p>
+          </div>
 
           {displayTestCode && (
-            <div style={{
-              background: 'rgba(255, 193, 7, 0.1)',
-              border: '1px solid var(--warning)',
-              borderRadius: '12px',
-              padding: '12px',
-              marginBottom: '2rem',
-              fontSize: '0.875rem'
-            }}>
-              <strong>Test Mode:</strong> Your code is <strong style={{ color: 'var(--warning)' }}>{displayTestCode}</strong>
+            <div className="info-box">
+              <strong>🧪 Test Mode</strong>
+              <p>Your code is <strong style={{ color: 'var(--warning)', fontSize: '1.25rem' }}>{displayTestCode}</strong></p>
             </div>
           )}
 
           {!displayTestCode && isTestMode && (
-            <div style={{
-              background: 'rgba(255, 193, 7, 0.1)',
-              border: '1px solid var(--warning)',
-              borderRadius: '12px',
-              padding: '12px',
-              marginBottom: '2rem',
-              fontSize: '0.875rem'
-            }}>
-              <strong>Test Mode:</strong> Check your console for the verification code
+            <div className="info-box">
+              <strong>🧪 Test Mode</strong>
+              <p>Check your console for the verification code</p>
             </div>
           )}
 
@@ -141,15 +127,15 @@ export default function Signup() {
           </div>
 
           {displayError && (
-            <p style={{ color: 'var(--accent)', marginBottom: '1rem' }}>{displayError}</p>
+            <p style={{ color: 'var(--accent)', marginBottom: '1rem', textAlign: 'center' }}>{displayError}</p>
           )}
 
           <button
-            className="btn btn-primary"
+            className="btn btn-primary btn-large"
             onClick={handleVerify}
             disabled={verificationCode.length !== 4 || isLoading}
           >
-            {isLoading ? 'Verifying...' : 'Verify & Continue'}
+            {isLoading ? 'Verifying...' : '✓ Verify & Continue'}
           </button>
 
           <button
@@ -168,23 +154,15 @@ export default function Signup() {
   return (
     <div className="page">
       <div className="container" style={{ paddingTop: '60px' }}>
-        <button
-          onClick={() => setScreen('welcome')}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: 'var(--text-secondary)',
-            cursor: 'pointer',
-            marginBottom: '2rem'
-          }}
-        >
+        <button className="back-btn" onClick={() => setScreen('welcome')}>
           ← Back
         </button>
 
-        <h1>Enter your phone number</h1>
-        <p style={{ marginBottom: '2rem' }}>
-          We'll call and text you when your alarm goes off
-        </p>
+        <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+          <span style={{ fontSize: '3rem', marginBottom: '1rem', display: 'block' }}>📱</span>
+          <h1>Enter your phone number</h1>
+          <p>We'll call and text you when your alarm goes off</p>
+        </div>
 
         <div className="input-group">
           <label>Phone Number</label>
@@ -194,22 +172,23 @@ export default function Signup() {
             placeholder="(555) 555-5555"
             value={phoneNumber}
             onChange={handlePhoneChange}
+            style={{ fontSize: '1.25rem', textAlign: 'center' }}
           />
         </div>
 
         {displayError && (
-          <p style={{ color: 'var(--accent)', marginBottom: '1rem' }}>{displayError}</p>
+          <p style={{ color: 'var(--accent)', marginBottom: '1rem', textAlign: 'center' }}>{displayError}</p>
         )}
 
         <button
-          className="btn btn-primary"
+          className="btn btn-primary btn-large"
           onClick={handleSendCode}
           disabled={phoneNumber.replace(/\D/g, '').length !== 10 || isLoading}
         >
-          {isLoading ? 'Sending...' : 'Send Verification Code'}
+          {isLoading ? 'Sending...' : '📩 Send Verification Code'}
         </button>
 
-        <p style={{ marginTop: '2rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+        <p style={{ marginTop: '2rem', fontSize: '0.75rem', color: 'var(--text-muted)', textAlign: 'center' }}>
           By continuing, you agree to receive calls and texts from Snooze You Lose
           at the number provided. Message and data rates may apply.
         </p>
