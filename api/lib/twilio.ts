@@ -8,12 +8,50 @@ const twilioPhone = process.env.TWILIO_PHONE_NUMBER
 // Only create client if credentials are available
 const client = accountSid && authToken ? twilio(accountSid, authToken) : null
 
+// Retry configuration
+const MAX_RETRIES = 3
+const RETRY_DELAY_MS = 2000
+
 export function isTwilioConfigured(): boolean {
   return !!(accountSid && authToken && twilioPhone)
 }
 
 /**
- * Send an SMS message
+ * Sleep helper for retry delays
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+/**
+ * Retry wrapper for Twilio operations
+ */
+async function withRetry<T>(
+  operation: () => Promise<T>,
+  operationName: string
+): Promise<T> {
+  let lastError: Error | null = null
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await operation()
+    } catch (error: any) {
+      lastError = error
+      console.error(`${operationName} attempt ${attempt} failed:`, error.message)
+
+      if (attempt < MAX_RETRIES) {
+        const delay = RETRY_DELAY_MS * attempt
+        console.log(`Retrying ${operationName} in ${delay}ms...`)
+        await sleep(delay)
+      }
+    }
+  }
+
+  throw lastError
+}
+
+/**
+ * Send an SMS message with retry logic
  */
 export async function sendSMS(to: string, body: string): Promise<{ success: boolean; messageId?: string; error?: string }> {
   if (!client || !twilioPhone) {
@@ -22,20 +60,23 @@ export async function sendSMS(to: string, body: string): Promise<{ success: bool
   }
 
   try {
-    const message = await client.messages.create({
-      body,
-      from: twilioPhone,
-      to: formatPhoneNumber(to)
-    })
+    const message = await withRetry(
+      () => client.messages.create({
+        body,
+        from: twilioPhone,
+        to: formatPhoneNumber(to)
+      }),
+      'SMS send'
+    )
     return { success: true, messageId: message.sid }
   } catch (error: any) {
-    console.error('Twilio SMS error:', error)
+    console.error('Twilio SMS error after retries:', error)
     return { success: false, error: error.message }
   }
 }
 
 /**
- * Make a phone call with text-to-speech
+ * Make a phone call with text-to-speech and retry logic
  */
 export async function makeCall(
   to: string,
@@ -48,22 +89,25 @@ export async function makeCall(
   }
 
   try {
-    const call = await client.calls.create({
-      twiml: `
-        <Response>
-          <Say voice="alice">${message}</Say>
-          <Gather numDigits="4" action="${webhookUrl}" method="POST">
-            <Say voice="alice">Enter your 4 digit code now.</Say>
-          </Gather>
-          <Say voice="alice">We didn't receive any input. Goodbye.</Say>
-        </Response>
-      `,
-      from: twilioPhone,
-      to: formatPhoneNumber(to)
-    })
+    const call = await withRetry(
+      () => client.calls.create({
+        twiml: `
+          <Response>
+            <Say voice="alice">${message}</Say>
+            <Gather numDigits="4" action="${webhookUrl}" method="POST">
+              <Say voice="alice">Enter your 4 digit code now.</Say>
+            </Gather>
+            <Say voice="alice">We didn't receive any input. Goodbye.</Say>
+          </Response>
+        `,
+        from: twilioPhone,
+        to: formatPhoneNumber(to)
+      }),
+      'Phone call'
+    )
     return { success: true, callId: call.sid }
   } catch (error: any) {
-    console.error('Twilio call error:', error)
+    console.error('Twilio call error after retries:', error)
     return { success: false, error: error.message }
   }
 }

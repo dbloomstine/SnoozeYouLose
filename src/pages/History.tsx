@@ -5,11 +5,11 @@ export default function History() {
   const { alarmHistory, setScreen } = useStore()
 
   const totalLost = alarmHistory
-    .filter(h => h.result === 'failed')
-    .reduce((sum, h) => sum + h.penaltyCharged, 0)
+    .filter(h => h.status === 'failed')
+    .reduce((sum, h) => sum + h.stakeAmount, 0)
 
   const totalSaved = alarmHistory
-    .filter(h => h.result === 'success')
+    .filter(h => h.status === 'acknowledged')
     .reduce((sum, h) => sum + h.stakeAmount, 0)
 
   return (
@@ -57,11 +57,11 @@ export default function History() {
                   )}
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <span className={`badge ${item.result === 'success' ? 'badge-success' : 'badge-danger'}`}>
-                    {item.result === 'success' ? 'Woke Up' : 'Snoozed'}
+                  <span className={`badge ${item.status === 'acknowledged' ? 'badge-success' : 'badge-danger'}`}>
+                    {item.status === 'acknowledged' ? 'Woke Up' : 'Snoozed'}
                   </span>
-                  <div className={`result ${item.result}`} style={{ marginTop: '8px' }}>
-                    {item.result === 'success' ? '+' : '-'}${item.stakeAmount}
+                  <div className={`result ${item.status === 'acknowledged' ? 'success' : 'failed'}`} style={{ marginTop: '8px' }}>
+                    {item.status === 'acknowledged' ? '+' : '-'}${item.stakeAmount}
                   </div>
                 </div>
               </div>

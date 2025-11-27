@@ -4,7 +4,7 @@ import { useStore } from '../store/useStore'
 const STAKE_OPTIONS = [1, 5, 10, 20, 50, 100]
 
 export default function SetAlarm() {
-  const { user, setScreen, setAlarm } = useStore()
+  const { user, setScreen, createAlarm, isLoading, error } = useStore()
   const [hours, setHours] = useState('07')
   const [minutes, setMinutes] = useState('00')
   const [selectedStake, setSelectedStake] = useState(5)
@@ -20,10 +20,10 @@ export default function SetAlarm() {
   const canAfford = user.walletBalance >= currentStake
   const isValidStake = currentStake >= 1
 
-  const handleSetAlarm = () => {
+  const handleSetAlarm = async () => {
     if (!canAfford || !isValidStake) return
     const time = `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`
-    setAlarm(time, currentStake)
+    await createAlarm(time, currentStake)
   }
 
   const handleHoursChange = (value: string) => {
@@ -164,12 +164,18 @@ export default function SetAlarm() {
           </p>
         )}
 
+        {error && (
+          <p style={{ color: 'var(--accent)', marginBottom: '1rem', textAlign: 'center' }}>
+            {error}
+          </p>
+        )}
+
         <button
           className="btn btn-primary btn-large"
           onClick={handleSetAlarm}
-          disabled={!canAfford || !isValidStake}
+          disabled={!canAfford || !isValidStake || isLoading}
         >
-          Set Alarm - ${currentStake} at risk
+          {isLoading ? 'Setting Alarm...' : `Set Alarm - $${currentStake} at risk`}
         </button>
 
         <p style={{

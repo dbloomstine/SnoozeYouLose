@@ -7,10 +7,12 @@ export default function Dashboard() {
     activeAlarm,
     setScreen,
     cancelAlarm,
-    simulateAlarmRinging,
+    testTriggerAlarm,
     alarmHistory,
     addFunds,
-    isTestMode
+    isTestMode,
+    isLoading,
+    logout
   } = useStore()
 
   if (!user) {
@@ -19,12 +21,37 @@ export default function Dashboard() {
   }
 
   const recentHistory = alarmHistory.slice(0, 3)
-  const successCount = alarmHistory.filter(h => h.result === 'success').length
-  const failCount = alarmHistory.filter(h => h.result === 'failed').length
+  const successCount = alarmHistory.filter(h => h.status === 'acknowledged').length
+  const failCount = alarmHistory.filter(h => h.status === 'failed').length
+
+  // Format time from ISO string
+  const formatAlarmTime = (isoString: string) => {
+    const date = new Date(isoString)
+    return format(date, 'h:mm a')
+  }
 
   return (
     <div className="page">
       <div className="container" style={{ paddingTop: '20px' }}>
+        {/* Header with logout */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+            {user.phoneNumber}
+          </div>
+          <button
+            onClick={logout}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-muted)',
+              cursor: 'pointer',
+              fontSize: '0.875rem'
+            }}
+          >
+            Log out
+          </button>
+        </div>
+
         {/* Wallet */}
         <div className="wallet">
           <div className="wallet-label">Your Balance</div>
@@ -36,6 +63,7 @@ export default function Dashboard() {
               className="btn btn-secondary"
               style={{ marginTop: '12px', padding: '8px 16px', width: 'auto', display: 'inline-block' }}
               onClick={() => addFunds(50)}
+              disabled={isLoading}
             >
               + Add $50 (Test)
             </button>
@@ -51,7 +79,7 @@ export default function Dashboard() {
                 {activeAlarm.status === 'pending' ? 'Set' : activeAlarm.status}
               </span>
             </div>
-            <div className="alarm-time">{activeAlarm.time}</div>
+            <div className="alarm-time">{formatAlarmTime(activeAlarm.scheduledFor)}</div>
             <div className="alarm-stake">${activeAlarm.stakeAmount} at stake</div>
             <p style={{ textAlign: 'center', marginTop: '8px', fontSize: '0.875rem' }}>
               {format(new Date(activeAlarm.scheduledFor), 'EEEE, MMM d')}
@@ -62,18 +90,18 @@ export default function Dashboard() {
                 className="btn btn-secondary"
                 style={{ flex: 1 }}
                 onClick={cancelAlarm}
+                disabled={isLoading}
               >
                 Cancel
               </button>
-              {isTestMode && (
-                <button
-                  className="btn btn-primary"
-                  style={{ flex: 1 }}
-                  onClick={simulateAlarmRinging}
-                >
-                  Test Ring
-                </button>
-              )}
+              <button
+                className="btn btn-primary"
+                style={{ flex: 1 }}
+                onClick={testTriggerAlarm}
+                disabled={isLoading}
+              >
+                Test Ring
+              </button>
             </div>
           </div>
         ) : (
@@ -152,8 +180,8 @@ export default function Dashboard() {
                   </div>
                 </div>
                 <div>
-                  <div className={`result ${item.result}`}>
-                    {item.result === 'success' ? '+' : '-'}${item.stakeAmount}
+                  <div className={`result ${item.status === 'acknowledged' ? 'success' : 'failed'}`}>
+                    {item.status === 'acknowledged' ? '+' : '-'}${item.stakeAmount}
                   </div>
                 </div>
               </div>

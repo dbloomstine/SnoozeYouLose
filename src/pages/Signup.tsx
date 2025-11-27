@@ -2,11 +2,24 @@ import { useState } from 'react'
 import { useStore } from '../store/useStore'
 
 export default function Signup() {
-  const { setScreen, login, currentScreen } = useStore()
+  const {
+    setScreen,
+    sendCode,
+    verifyCode,
+    currentScreen,
+    isLoading,
+    error,
+    clearError,
+    pendingPhone,
+    testVerificationCode,
+    isTestMode
+  } = useStore()
+
   const [phoneNumber, setPhoneNumber] = useState('')
   const [verificationCode, setVerificationCode] = useState('')
   const [isVerifying, setIsVerifying] = useState(false)
-  const [error, setError] = useState('')
+  const [localError, setLocalError] = useState('')
+  const [testCode, setTestCode] = useState<string | null>(null)
 
   const formatPhoneNumber = (value: string) => {
     const numbers = value.replace(/\D/g, '')
@@ -18,37 +31,54 @@ export default function Signup() {
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const formatted = formatPhoneNumber(e.target.value)
     setPhoneNumber(formatted)
-    setError('')
+    setLocalError('')
+    clearError()
   }
 
-  const handleSendCode = () => {
+  const handleSendCode = async () => {
     const numbers = phoneNumber.replace(/\D/g, '')
     if (numbers.length !== 10) {
-      setError('Please enter a valid 10-digit phone number')
+      setLocalError('Please enter a valid 10-digit phone number')
       return
     }
-    // In test mode, we simulate sending a code
-    setIsVerifying(true)
-    setScreen('verify')
+
+    const result = await sendCode(numbers)
+    if (result.success) {
+      setIsVerifying(true)
+      setTestCode(result.testCode || null)
+      setScreen('verify')
+    }
   }
 
-  const handleVerify = () => {
-    // In test mode, accept any 4-digit code
+  const handleVerify = async () => {
     if (verificationCode.length !== 4) {
-      setError('Please enter the 4-digit code')
+      setLocalError('Please enter the 4-digit code')
       return
     }
-    // Log the user in
-    login(phoneNumber)
+
+    const phone = pendingPhone || phoneNumber.replace(/\D/g, '')
+    const success = await verifyCode(phone, verificationCode)
+
+    if (!success) {
+      setLocalError('Invalid or expired code. Please try again.')
+    }
   }
+
+  const displayError = localError || error
 
   if (isVerifying || currentScreen === 'verify') {
+    const displayPhone = pendingPhone || phoneNumber
+    const displayTestCode = testCode || testVerificationCode
+
     return (
       <div className="page">
         <div className="container" style={{ paddingTop: '60px' }}>
           <button
             onClick={() => {
               setIsVerifying(false)
+              setVerificationCode('')
+              setLocalError('')
+              clearError()
               setScreen('signup')
             }}
             style={{
@@ -64,19 +94,34 @@ export default function Signup() {
 
           <h1>Verify your number</h1>
           <p style={{ marginBottom: '2rem' }}>
-            Enter the 4-digit code sent to {phoneNumber}
+            Enter the 4-digit code sent to {formatPhoneNumber(displayPhone)}
           </p>
 
-          <div style={{
-            background: 'rgba(255, 193, 7, 0.1)',
-            border: '1px solid var(--warning)',
-            borderRadius: '12px',
-            padding: '12px',
-            marginBottom: '2rem',
-            fontSize: '0.875rem'
-          }}>
-            <strong>Test Mode:</strong> Enter any 4-digit code (e.g., 1234)
-          </div>
+          {displayTestCode && (
+            <div style={{
+              background: 'rgba(255, 193, 7, 0.1)',
+              border: '1px solid var(--warning)',
+              borderRadius: '12px',
+              padding: '12px',
+              marginBottom: '2rem',
+              fontSize: '0.875rem'
+            }}>
+              <strong>Test Mode:</strong> Your code is <strong style={{ color: 'var(--warning)' }}>{displayTestCode}</strong>
+            </div>
+          )}
+
+          {!displayTestCode && isTestMode && (
+            <div style={{
+              background: 'rgba(255, 193, 7, 0.1)',
+              border: '1px solid var(--warning)',
+              borderRadius: '12px',
+              padding: '12px',
+              marginBottom: '2rem',
+              fontSize: '0.875rem'
+            }}>
+              <strong>Test Mode:</strong> Check your console for the verification code
+            </div>
+          )}
 
           <div className="input-group">
             <input
@@ -88,27 +133,30 @@ export default function Signup() {
               value={verificationCode}
               onChange={(e) => {
                 setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 4))
-                setError('')
+                setLocalError('')
+                clearError()
               }}
+              autoFocus
             />
           </div>
 
-          {error && (
-            <p style={{ color: 'var(--accent)', marginBottom: '1rem' }}>{error}</p>
+          {displayError && (
+            <p style={{ color: 'var(--accent)', marginBottom: '1rem' }}>{displayError}</p>
           )}
 
           <button
             className="btn btn-primary"
             onClick={handleVerify}
-            disabled={verificationCode.length !== 4}
+            disabled={verificationCode.length !== 4 || isLoading}
           >
-            Verify & Continue
+            {isLoading ? 'Verifying...' : 'Verify & Continue'}
           </button>
 
           <button
             className="btn btn-secondary"
             style={{ marginTop: '1rem' }}
             onClick={handleSendCode}
+            disabled={isLoading}
           >
             Resend Code
           </button>
@@ -149,16 +197,16 @@ export default function Signup() {
           />
         </div>
 
-        {error && (
-          <p style={{ color: 'var(--accent)', marginBottom: '1rem' }}>{error}</p>
+        {displayError && (
+          <p style={{ color: 'var(--accent)', marginBottom: '1rem' }}>{displayError}</p>
         )}
 
         <button
           className="btn btn-primary"
           onClick={handleSendCode}
-          disabled={phoneNumber.replace(/\D/g, '').length !== 10}
+          disabled={phoneNumber.replace(/\D/g, '').length !== 10 || isLoading}
         >
-          Send Verification Code
+          {isLoading ? 'Sending...' : 'Send Verification Code'}
         </button>
 
         <p style={{ marginTop: '2rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>

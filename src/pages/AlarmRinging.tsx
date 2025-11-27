@@ -1,14 +1,24 @@
 import { useState, useEffect } from 'react'
 import { useStore } from '../store/useStore'
+import { format } from 'date-fns'
 
 const RESPONSE_TIME_SECONDS = 300 // 5 minutes
 
 export default function AlarmRinging() {
-  const { activeAlarm, acknowledgeAlarm, failAlarm, setScreen, isTestMode } = useStore()
+  const {
+    activeAlarm,
+    acknowledgeAlarm,
+    failAlarm,
+    setScreen,
+    isTestMode,
+    isLoading,
+    error,
+    clearError
+  } = useStore()
+
   const [timeLeft, setTimeLeft] = useState(RESPONSE_TIME_SECONDS)
-  const [verificationCode] = useState(() => Math.floor(1000 + Math.random() * 9000).toString())
   const [enteredCode, setEnteredCode] = useState('')
-  const [error, setError] = useState('')
+  const [localError, setLocalError] = useState('')
 
   useEffect(() => {
     if (timeLeft <= 0) {
@@ -31,11 +41,20 @@ export default function AlarmRinging() {
   const minutes = Math.floor(timeLeft / 60)
   const seconds = timeLeft % 60
 
-  const handleAcknowledge = () => {
-    if (enteredCode === verificationCode) {
-      acknowledgeAlarm()
-    } else {
-      setError('Wrong code! Check your phone.')
+  // Get verification code from alarm (available in test mode)
+  const verificationCode = activeAlarm.verificationCode
+
+  const handleAcknowledge = async () => {
+    if (enteredCode.length !== 4) {
+      setLocalError('Please enter a 4-digit code')
+      return
+    }
+
+    clearError()
+    const success = await acknowledgeAlarm(enteredCode)
+
+    if (!success) {
+      setLocalError('Wrong code! Check your phone.')
       setEnteredCode('')
     }
   }
@@ -43,6 +62,18 @@ export default function AlarmRinging() {
   const handleGiveUp = () => {
     if (confirm(`Are you sure? You'll lose $${activeAlarm.stakeAmount}!`)) {
       failAlarm()
+    }
+  }
+
+  const displayError = localError || error
+
+  // Format time from ISO string
+  const formatAlarmTime = (isoString: string) => {
+    try {
+      const date = new Date(isoString)
+      return format(date, 'h:mm a')
+    } catch {
+      return '--:--'
     }
   }
 
@@ -62,7 +93,7 @@ export default function AlarmRinging() {
         </h1>
 
         <div className="alarm-time ringing" style={{ color: 'white' }}>
-          {activeAlarm.time}
+          {formatAlarmTime(activeAlarm.scheduledFor)}
         </div>
 
         <div style={{
@@ -96,24 +127,35 @@ export default function AlarmRinging() {
 
         {/* Verification */}
         <div className="card" style={{ textAlign: 'left', marginBottom: '24px' }}>
-          {isTestMode ? (
-            <>
-              <div style={{
-                background: 'rgba(255, 193, 7, 0.1)',
-                border: '1px solid var(--warning)',
-                borderRadius: '8px',
-                padding: '12px',
-                marginBottom: '16px'
-              }}>
-                <strong>Test Mode</strong>
-                <p style={{ margin: '8px 0 0', fontSize: '0.875rem' }}>
-                  Your verification code is: <strong style={{ color: 'var(--warning)' }}>{verificationCode}</strong>
-                </p>
-                <p style={{ margin: '4px 0 0', fontSize: '0.75rem' }}>
-                  (In production, this would be sent via SMS/call)
-                </p>
-              </div>
-            </>
+          {verificationCode ? (
+            <div style={{
+              background: 'rgba(255, 193, 7, 0.1)',
+              border: '1px solid var(--warning)',
+              borderRadius: '8px',
+              padding: '12px',
+              marginBottom: '16px'
+            }}>
+              <strong>Test Mode</strong>
+              <p style={{ margin: '8px 0 0', fontSize: '0.875rem' }}>
+                Your verification code is: <strong style={{ color: 'var(--warning)' }}>{verificationCode}</strong>
+              </p>
+              <p style={{ margin: '4px 0 0', fontSize: '0.75rem' }}>
+                (In production, this would be sent via SMS/call)
+              </p>
+            </div>
+          ) : isTestMode ? (
+            <div style={{
+              background: 'rgba(255, 193, 7, 0.1)',
+              border: '1px solid var(--warning)',
+              borderRadius: '8px',
+              padding: '12px',
+              marginBottom: '16px'
+            }}>
+              <strong>Test Mode</strong>
+              <p style={{ margin: '8px 0 0', fontSize: '0.875rem' }}>
+                Check the server logs for your verification code, or check your SMS if Twilio is configured.
+              </p>
+            </div>
           ) : (
             <p style={{ marginBottom: '16px' }}>
               Check your phone for the verification code sent via SMS and call.
@@ -132,27 +174,29 @@ export default function AlarmRinging() {
             value={enteredCode}
             onChange={(e) => {
               setEnteredCode(e.target.value.replace(/\D/g, '').slice(0, 4))
-              setError('')
+              setLocalError('')
+              clearError()
             }}
             autoFocus
           />
-          {error && (
-            <p style={{ color: 'var(--accent)', marginTop: '8px' }}>{error}</p>
+          {displayError && (
+            <p style={{ color: 'var(--accent)', marginTop: '8px' }}>{displayError}</p>
           )}
         </div>
 
         <button
           className="btn btn-success btn-large"
           onClick={handleAcknowledge}
-          disabled={enteredCode.length !== 4}
+          disabled={enteredCode.length !== 4 || isLoading}
         >
-          I'M AWAKE!
+          {isLoading ? 'Verifying...' : "I'M AWAKE!"}
         </button>
 
         <button
           className="btn btn-secondary"
           style={{ marginTop: '12px' }}
           onClick={handleGiveUp}
+          disabled={isLoading}
         >
           Give Up (Lose ${activeAlarm.stakeAmount})
         </button>
