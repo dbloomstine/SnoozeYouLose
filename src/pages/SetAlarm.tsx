@@ -4,7 +4,7 @@ import { useStore } from '../store/useStore'
 const STAKE_OPTIONS = [1, 5, 10, 20, 50, 100]
 
 export default function SetAlarm() {
-  const { user, setScreen, setAlarm } = useStore()
+  const { user, setScreen, createAlarm, isLoading, error } = useStore()
   const [hours, setHours] = useState('07')
   const [minutes, setMinutes] = useState('00')
   const [selectedStake, setSelectedStake] = useState(5)
@@ -20,10 +20,10 @@ export default function SetAlarm() {
   const canAfford = user.walletBalance >= currentStake
   const isValidStake = currentStake >= 1
 
-  const handleSetAlarm = () => {
+  const handleSetAlarm = async () => {
     if (!canAfford || !isValidStake) return
     const time = `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`
-    setAlarm(time, currentStake)
+    await createAlarm(time, currentStake)
   }
 
   const handleHoursChange = (value: string) => {
@@ -43,26 +43,20 @@ export default function SetAlarm() {
   return (
     <div className="page">
       <div className="container" style={{ paddingTop: '20px' }}>
-        <button
-          onClick={() => setScreen('dashboard')}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: 'var(--text-secondary)',
-            cursor: 'pointer',
-            marginBottom: '1rem'
-          }}
-        >
+        <button className="back-btn" onClick={() => setScreen('dashboard')}>
           ← Back
         </button>
 
-        <h1 style={{ marginBottom: '0.5rem' }}>Set Alarm</h1>
-        <p style={{ marginBottom: '2rem' }}>Pick a time and stake your cash</p>
+        <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
+          <span style={{ fontSize: '2.5rem', marginBottom: '0.5rem', display: 'block' }}>⏰</span>
+          <h1 style={{ marginBottom: '0.5rem' }}>Set Alarm</h1>
+          <p>Pick a time and stake your cash</p>
+        </div>
 
         {/* Time Picker */}
-        <div className="card" style={{ marginBottom: '24px' }}>
-          <label style={{ display: 'block', marginBottom: '12px', color: 'var(--text-secondary)' }}>
-            Alarm Time
+        <div className="card" style={{ marginBottom: '20px' }}>
+          <label style={{ display: 'block', marginBottom: '12px', color: 'var(--text-secondary)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            🕐 Alarm Time
           </label>
           <div className="time-picker">
             <input
@@ -83,15 +77,15 @@ export default function SetAlarm() {
               onFocus={(e) => e.target.select()}
             />
           </div>
-          <p style={{ textAlign: 'center', fontSize: '0.875rem', marginTop: '8px' }}>
+          <p style={{ textAlign: 'center', fontSize: '0.8rem', marginTop: '8px', color: 'var(--text-muted)' }}>
             24-hour format
           </p>
         </div>
 
         {/* Stake Selector */}
-        <div className="card" style={{ marginBottom: '24px' }}>
-          <label style={{ display: 'block', marginBottom: '12px', color: 'var(--text-secondary)' }}>
-            Amount at Stake
+        <div className="card" style={{ marginBottom: '20px' }}>
+          <label style={{ display: 'block', marginBottom: '14px', color: 'var(--text-secondary)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            💸 Amount at Stake
           </label>
           <div className="stake-selector">
             {STAKE_OPTIONS.map(amount => (
@@ -103,25 +97,25 @@ export default function SetAlarm() {
                   setUseCustom(false)
                 }}
                 disabled={user.walletBalance < amount}
-                style={user.walletBalance < amount ? { opacity: 0.5 } : {}}
               >
                 <div className="amount">${amount}</div>
               </button>
             ))}
           </div>
 
-          <div style={{ marginTop: '16px' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+          <div style={{ marginTop: '18px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px', cursor: 'pointer' }}>
               <input
                 type="checkbox"
                 checked={useCustom}
                 onChange={(e) => setUseCustom(e.target.checked)}
+                style={{ width: '18px', height: '18px', accentColor: 'var(--accent)' }}
               />
-              Custom amount
+              <span style={{ color: 'var(--text-secondary)' }}>Custom amount</span>
             </label>
             {useCustom && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '1.5rem' }}>$</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '1.5rem', color: 'var(--text-secondary)' }}>$</span>
                 <input
                   type="number"
                   className="input"
@@ -130,6 +124,7 @@ export default function SetAlarm() {
                   onChange={(e) => setCustomStake(e.target.value)}
                   min="1"
                   max={user.walletBalance}
+                  style={{ flex: 1 }}
                 />
               </div>
             )}
@@ -137,50 +132,53 @@ export default function SetAlarm() {
         </div>
 
         {/* Summary */}
-        <div className="card" style={{ marginBottom: '24px', background: 'var(--bg-secondary)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-            <span>Your balance</span>
-            <span>${user.walletBalance.toFixed(2)}</span>
+        <div className="card" style={{ marginBottom: '20px', background: 'rgba(0, 0, 0, 0.3)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', fontSize: '0.95rem' }}>
+            <span style={{ color: 'var(--text-secondary)' }}>Your balance</span>
+            <span style={{ fontWeight: '600' }}>${user.walletBalance.toFixed(2)}</span>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-            <span>Stake amount</span>
-            <span style={{ color: 'var(--accent)' }}>-${currentStake.toFixed(2)}</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', fontSize: '0.95rem' }}>
+            <span style={{ color: 'var(--text-secondary)' }}>Stake amount</span>
+            <span style={{ color: 'var(--accent)', fontWeight: '600' }}>-${currentStake.toFixed(2)}</span>
           </div>
           <div style={{
             display: 'flex',
             justifyContent: 'space-between',
-            paddingTop: '8px',
-            borderTop: '1px solid var(--bg-card)',
-            fontWeight: '600'
+            paddingTop: '12px',
+            borderTop: '1px solid var(--border-subtle)',
+            fontWeight: '700',
+            fontSize: '1.05rem'
           }}>
             <span>After alarm</span>
-            <span>${(user.walletBalance - currentStake).toFixed(2)}</span>
+            <span style={{ color: 'var(--success)' }}>${Math.max(0, user.walletBalance - currentStake).toFixed(2)}</span>
           </div>
         </div>
 
         {!canAfford && (
+          <div className="info-box" style={{ marginBottom: '16px' }}>
+            <strong>⚠️ Insufficient Balance</strong>
+            <p>Add more funds or select a lower stake amount</p>
+          </div>
+        )}
+
+        {error && (
           <p style={{ color: 'var(--accent)', marginBottom: '1rem', textAlign: 'center' }}>
-            Insufficient balance for this stake
+            {error}
           </p>
         )}
 
         <button
-          className="btn btn-primary btn-large"
+          className="btn btn-primary btn-large glow"
           onClick={handleSetAlarm}
-          disabled={!canAfford || !isValidStake}
+          disabled={!canAfford || !isValidStake || isLoading}
         >
-          Set Alarm - ${currentStake} at risk
+          {isLoading ? 'Setting Alarm...' : `🔔 Set Alarm - $${currentStake} at risk`}
         </button>
 
-        <p style={{
-          marginTop: '1rem',
-          fontSize: '0.75rem',
-          color: 'var(--text-muted)',
-          textAlign: 'center'
-        }}>
-          You'll receive a call and text at alarm time.
-          Respond within 5 minutes to keep your money.
-        </p>
+        <div className="info-box success" style={{ marginTop: '20px' }}>
+          <strong>📱 How it works</strong>
+          <p>You'll receive a call and text at alarm time. Respond within 5 minutes to keep your money!</p>
+        </div>
       </div>
     </div>
   )

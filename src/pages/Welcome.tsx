@@ -18,38 +18,44 @@ export default function Welcome() {
         minHeight: '100vh',
         textAlign: 'center'
       }}>
-        <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>
-          ⏰
-        </div>
-        <h1 style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>
-          Snooze You Lose
-        </h1>
-        <p style={{ fontSize: '1.25rem', marginBottom: '3rem' }}>
-          Wake up or pay up
-        </p>
+        <span className="hero-emoji float">⏰</span>
+        <h1 className="hero-title">Snooze You Lose</h1>
+        <p className="hero-subtitle">Wake up or pay up</p>
 
-        <div style={{ marginBottom: '2rem' }}>
-          <div className="card" style={{ textAlign: 'left' }}>
-            <h3 style={{ marginBottom: '1rem', color: 'var(--accent)' }}>How it works:</h3>
-            <ol style={{ paddingLeft: '1.25rem', lineHeight: '2' }}>
-              <li>Deposit money into your wallet</li>
-              <li>Set an alarm and stake your cash</li>
-              <li>We call & text you at alarm time</li>
-              <li>Respond in time = keep your money</li>
-              <li>Miss it = lose your stake</li>
-            </ol>
-          </div>
+        <div className="card" style={{ marginBottom: '2rem' }}>
+          <ul className="feature-list">
+            <li>
+              <span className="feature-number">1</span>
+              <span>Deposit money into your wallet</span>
+            </li>
+            <li>
+              <span className="feature-number">2</span>
+              <span>Set an alarm and stake your cash</span>
+            </li>
+            <li>
+              <span className="feature-number">3</span>
+              <span>We call & text you at alarm time</span>
+            </li>
+            <li>
+              <span className="feature-number">4</span>
+              <span>Respond in time = keep your money</span>
+            </li>
+            <li>
+              <span className="feature-number">5</span>
+              <span>Miss it = lose your stake forever</span>
+            </li>
+          </ul>
         </div>
 
         <button
-          className="btn btn-primary btn-large"
+          className="btn btn-primary btn-large glow"
           onClick={() => setScreen('signup')}
         >
-          Get Started
+          Start Waking Up
         </button>
 
-        <p style={{ marginTop: '1rem', fontSize: '0.875rem' }}>
-          Put your money where your snooze is
+        <p style={{ marginTop: '1.5rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+          Put your money where your snooze is 💸
         </p>
       </div>
     </div>

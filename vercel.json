@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/trigger-alarms",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/check-failed-alarms",
+      "schedule": "* * * * *"
+    }
+  ]
+}

@@ -1,4 +1,6 @@
+import { useEffect } from 'react'
 import { useStore } from './store/useStore'
+import * as api from './lib/api'
 import Welcome from './pages/Welcome'
 import Signup from './pages/Signup'
 import Dashboard from './pages/Dashboard'
@@ -7,7 +9,29 @@ import AlarmRinging from './pages/AlarmRinging'
 import History from './pages/History'
 
 function App() {
-  const { currentScreen, isTestMode } = useStore()
+  const {
+    currentScreen,
+    isTestMode,
+    token,
+    isAuthenticated,
+    refreshUser,
+    fetchAlarms,
+    setScreen
+  } = useStore()
+
+  // Initialize on mount - restore session if token exists
+  useEffect(() => {
+    if (token) {
+      api.setToken(token)
+      refreshUser()
+      fetchAlarms()
+
+      // If authenticated, make sure we're on a valid screen
+      if (isAuthenticated && currentScreen === 'welcome') {
+        setScreen('dashboard')
+      }
+    }
+  }, []) // Only run on mount
 
   const renderScreen = () => {
     switch (currentScreen) {
