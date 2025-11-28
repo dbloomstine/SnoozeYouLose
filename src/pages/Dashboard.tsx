@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import { useStore } from '../store/useStore'
 import { format } from 'date-fns'
+import * as api from '../lib/api'
 
 export default function Dashboard() {
   const {
@@ -14,6 +16,8 @@ export default function Dashboard() {
     isLoading,
     logout
   } = useStore()
+
+  const [checkoutLoading, setCheckoutLoading] = useState<number | null>(null)
 
   if (!user) {
     setScreen('welcome')
@@ -68,24 +72,45 @@ export default function Dashboard() {
 
         {/* Wallet */}
         <div className="wallet">
-          <div className="wallet-label">💰 Your Balance</div>
+          <div className="wallet-label">Your Balance</div>
           <div className={`wallet-balance ${user.walletBalance < 10 ? 'danger' : ''}`}>
             ${user.walletBalance.toFixed(2)}
           </div>
           {totalSaved > 0 && (
             <div style={{ fontSize: '0.85rem', color: 'var(--success)', marginTop: '8px', fontWeight: '500' }}>
-              🏆 ${totalSaved.toFixed(0)} saved by waking up!
+              ${totalSaved.toFixed(0)} saved by waking up!
             </div>
           )}
-          {isTestMode && (
-            <button
-              className="btn btn-secondary"
-              style={{ marginTop: '16px', padding: '10px 20px', width: 'auto', display: 'inline-block', fontSize: '0.9rem' }}
-              onClick={() => addFunds(50)}
-              disabled={isLoading}
-            >
-              + Add $50 (Test Mode)
-            </button>
+          <div style={{ marginTop: '16px', display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            {[5, 10, 25, 50, 100].map(amount => (
+              <button
+                key={amount}
+                className="btn btn-secondary"
+                style={{ padding: '10px 16px', width: 'auto', fontSize: '0.85rem' }}
+                onClick={async () => {
+                  if (isTestMode) {
+                    addFunds(amount)
+                  } else {
+                    setCheckoutLoading(amount)
+                    try {
+                      const { url } = await api.createCheckoutSession(amount)
+                      window.location.href = url
+                    } catch (err) {
+                      console.error('Checkout error:', err)
+                      setCheckoutLoading(null)
+                    }
+                  }
+                }}
+                disabled={isLoading || checkoutLoading === amount}
+              >
+                {checkoutLoading === amount ? '...' : `+$${amount}`}
+              </button>
+            ))}
+          </div>
+          {!isTestMode && (
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '10px' }}>
+              Secure payments via Stripe
+            </div>
           )}
         </div>
 

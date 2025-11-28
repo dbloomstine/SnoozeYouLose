@@ -106,6 +106,14 @@ export async function addFunds(amount: number): Promise<{ walletBalance: number 
   })
 }
 
+// Stripe checkout for adding real funds
+export async function createCheckoutSession(amount: number): Promise<{ url: string }> {
+  return fetchAPI<{ url: string }>('/stripe/create-checkout', {
+    method: 'POST',
+    body: JSON.stringify({ amount })
+  })
+}
+
 // ============ Alarms ============
 
 export interface Alarm {

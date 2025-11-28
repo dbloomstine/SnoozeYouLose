@@ -4,10 +4,11 @@ const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'dev-secret-ch
 
 export interface JWTPayload {
   userId: string
+  [key: string]: unknown
 }
 
 export async function sign(payload: JWTPayload): Promise<string> {
-  return new SignJWT(payload)
+  return new SignJWT(payload as Record<string, unknown>)
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime('30d')

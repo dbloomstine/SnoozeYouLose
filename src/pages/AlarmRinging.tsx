@@ -1,8 +1,44 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useStore } from '../store/useStore'
 import { format } from 'date-fns'
 
 const RESPONSE_TIME_SECONDS = 300 // 5 minutes
+
+// Create alarm sound using Web Audio API
+const createAlarmSound = () => {
+  try {
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+
+    const playBeep = () => {
+      const oscillator = audioContext.createOscillator()
+      const gainNode = audioContext.createGain()
+
+      oscillator.connect(gainNode)
+      gainNode.connect(audioContext.destination)
+
+      oscillator.frequency.value = 880 // A5 note
+      oscillator.type = 'sine'
+
+      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5)
+
+      oscillator.start(audioContext.currentTime)
+      oscillator.stop(audioContext.currentTime + 0.5)
+    }
+
+    return { playBeep, audioContext }
+  } catch (e) {
+    console.log('Web Audio API not supported')
+    return null
+  }
+}
+
+// Vibration helper
+const vibrate = () => {
+  if ('vibrate' in navigator) {
+    navigator.vibrate([200, 100, 200, 100, 200])
+  }
+}
 
 export default function AlarmRinging() {
   const {
@@ -19,6 +55,38 @@ export default function AlarmRinging() {
   const [timeLeft, setTimeLeft] = useState(RESPONSE_TIME_SECONDS)
   const [enteredCode, setEnteredCode] = useState('')
   const [localError, setLocalError] = useState('')
+  const [soundEnabled, setSoundEnabled] = useState(true)
+  const alarmSoundRef = useRef<ReturnType<typeof createAlarmSound>>(null)
+
+  // Initialize sound on mount
+  useEffect(() => {
+    alarmSoundRef.current = createAlarmSound()
+    return () => {
+      if (alarmSoundRef.current?.audioContext) {
+        alarmSoundRef.current.audioContext.close()
+      }
+    }
+  }, [])
+
+  // Play alarm sound and vibrate periodically
+  useEffect(() => {
+    if (!soundEnabled) return
+
+    const playAlarm = () => {
+      if (alarmSoundRef.current) {
+        alarmSoundRef.current.playBeep()
+      }
+      vibrate()
+    }
+
+    // Play immediately
+    playAlarm()
+
+    // Then every 2 seconds
+    const interval = setInterval(playAlarm, 2000)
+
+    return () => clearInterval(interval)
+  }, [soundEnabled])
 
   useEffect(() => {
     if (timeLeft <= 0) {
@@ -83,7 +151,7 @@ export default function AlarmRinging() {
       background: `linear-gradient(180deg, ${isUrgent ? 'rgba(239, 68, 68, 0.8)' : 'rgba(255, 107, 107, 0.6)'} 0%, var(--bg-dark) 100%)`,
       minHeight: '100vh'
     }}>
-      <div className="container" style={{ paddingTop: '40px', textAlign: 'center' }}>
+      <div className="container" style={{ paddingTop: '40px', textAlign: 'center', position: 'relative' }}>
         {/* Ringing Animation */}
         <div className="ringing emoji-large" style={{ marginBottom: '1rem' }}>
           ⏰
@@ -109,10 +177,34 @@ export default function AlarmRinging() {
           💰 ${activeAlarm.stakeAmount} at stake!
         </div>
 
+        {/* Sound toggle */}
+        <button
+          onClick={() => setSoundEnabled(!soundEnabled)}
+          style={{
+            position: 'absolute',
+            top: '20px',
+            right: '20px',
+            background: 'var(--bg-glass)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: '50%',
+            width: '44px',
+            height: '44px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            fontSize: '1.2rem',
+            color: soundEnabled ? 'var(--text-primary)' : 'var(--text-muted)'
+          }}
+          title={soundEnabled ? 'Mute alarm' : 'Unmute alarm'}
+        >
+          {soundEnabled ? '🔊' : '🔇'}
+        </button>
+
         {/* Countdown */}
         <div className="countdown-display">
           <div style={{ color: 'var(--text-secondary)', marginBottom: '8px', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '1px' }}>
-            ⏱️ Time remaining
+            Time remaining
           </div>
           <div className={`countdown-time ${isUrgent ? 'urgent' : ''}`}>
             {minutes}:{seconds.toString().padStart(2, '0')}

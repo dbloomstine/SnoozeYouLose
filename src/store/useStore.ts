@@ -73,7 +73,7 @@ export const useStore = create<AppState>()(
       isAuthenticated: false,
       activeAlarm: null,
       alarmHistory: [],
-      isTestMode: true,
+      isTestMode: false,
       pendingPhone: null,
       testVerificationCode: null,
 

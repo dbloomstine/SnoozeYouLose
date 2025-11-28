@@ -1,12 +1,19 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useStore } from '../store/useStore'
+import { format } from 'date-fns'
 
 const STAKE_OPTIONS = [1, 5, 10, 20, 50, 100]
+
+// Get user's timezone abbreviation
+const getTimezoneAbbr = () => {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone
+}
 
 export default function SetAlarm() {
   const { user, setScreen, createAlarm, isLoading, error } = useStore()
   const [hours, setHours] = useState('07')
   const [minutes, setMinutes] = useState('00')
+  const [isPM, setIsPM] = useState(false)
   const [selectedStake, setSelectedStake] = useState(5)
   const [customStake, setCustomStake] = useState('')
   const [useCustom, setUseCustom] = useState(false)
@@ -20,16 +27,38 @@ export default function SetAlarm() {
   const canAfford = user.walletBalance >= currentStake
   const isValidStake = currentStake >= 1
 
+  // Calculate the actual 24-hour time for the alarm
+  const get24HourTime = () => {
+    let h = parseInt(hours) || 12
+    if (isPM && h !== 12) h += 12
+    if (!isPM && h === 12) h = 0
+    return `${h.toString().padStart(2, '0')}:${minutes.padStart(2, '0')}`
+  }
+
+  // Preview when the alarm will go off
+  const alarmPreview = useMemo(() => {
+    const [h, m] = get24HourTime().split(':').map(Number)
+    const now = new Date()
+    const alarm = new Date()
+    alarm.setHours(h, m, 0, 0)
+    if (alarm <= now) {
+      alarm.setDate(alarm.getDate() + 1)
+    }
+    return alarm
+  }, [hours, minutes, isPM])
+
   const handleSetAlarm = async () => {
     if (!canAfford || !isValidStake) return
-    const time = `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`
+    const time = get24HourTime()
     await createAlarm(time, currentStake)
   }
 
   const handleHoursChange = (value: string) => {
     const num = parseInt(value) || 0
-    if (num >= 0 && num <= 23) {
+    if (num >= 1 && num <= 12) {
       setHours(num.toString().padStart(2, '0'))
+    } else if (num === 0) {
+      setHours('12')
     }
   }
 
@@ -56,13 +85,13 @@ export default function SetAlarm() {
         {/* Time Picker */}
         <div className="card" style={{ marginBottom: '20px' }}>
           <label style={{ display: 'block', marginBottom: '12px', color: 'var(--text-secondary)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-            🕐 Alarm Time
+            Alarm Time
           </label>
           <div className="time-picker">
             <input
               type="number"
-              min="0"
-              max="23"
+              min="1"
+              max="12"
               value={hours}
               onChange={(e) => handleHoursChange(e.target.value)}
               onFocus={(e) => e.target.select()}
@@ -76,9 +105,48 @@ export default function SetAlarm() {
               onChange={(e) => handleMinutesChange(e.target.value)}
               onFocus={(e) => e.target.select()}
             />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginLeft: '8px' }}>
+              <button
+                type="button"
+                onClick={() => setIsPM(false)}
+                style={{
+                  padding: '12px 16px',
+                  borderRadius: '12px',
+                  border: 'none',
+                  background: !isPM ? 'var(--gradient-primary)' : 'var(--bg-glass)',
+                  color: !isPM ? 'white' : 'var(--text-secondary)',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  fontSize: '1rem',
+                  transition: 'all 0.2s'
+                }}
+              >
+                AM
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsPM(true)}
+                style={{
+                  padding: '12px 16px',
+                  borderRadius: '12px',
+                  border: 'none',
+                  background: isPM ? 'var(--gradient-primary)' : 'var(--bg-glass)',
+                  color: isPM ? 'white' : 'var(--text-secondary)',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  fontSize: '1rem',
+                  transition: 'all 0.2s'
+                }}
+              >
+                PM
+              </button>
+            </div>
           </div>
-          <p style={{ textAlign: 'center', fontSize: '0.8rem', marginTop: '8px', color: 'var(--text-muted)' }}>
-            24-hour format
+          <p style={{ textAlign: 'center', fontSize: '0.85rem', marginTop: '12px', color: 'var(--text-secondary)' }}>
+            {format(alarmPreview, 'EEEE, MMM d')} at {format(alarmPreview, 'h:mm a')}
+            <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+              {getTimezoneAbbr()}
+            </span>
           </p>
         </div>
 

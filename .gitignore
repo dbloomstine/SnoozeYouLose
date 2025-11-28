@@ -27,3 +27,5 @@ npm-debug.log*
 # Cache
 .cache/
 *.tsbuildinfo
+.vercel
+.env*.local
