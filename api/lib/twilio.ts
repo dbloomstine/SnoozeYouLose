@@ -124,7 +124,10 @@ export async function sendVerificationCode(to: string, code: string): Promise<{ 
  * Send alarm wake-up SMS with code
  */
 export async function sendAlarmSMS(to: string, code: string, stakeAmount: number): Promise<{ success: boolean; error?: string }> {
-  const body = `⏰ WAKE UP! Your alarm is ringing!\n\n$${stakeAmount} is at stake!\n\nReply with code: ${code}\n\nYou have 5 minutes to respond or you lose your money!`
+  const appUrl = process.env.VERCEL_URL
+    ? `https://snooze-you-lose.vercel.app`
+    : 'http://localhost:5173'
+  const body = `WAKE UP! $${stakeAmount} at stake!\n\nYour code: ${code}\n\nOpen app: ${appUrl}\n\nOr reply with the code. 5 min to respond!`
   return sendSMS(to, body)
 }
 
