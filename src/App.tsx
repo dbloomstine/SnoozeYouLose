@@ -7,6 +7,8 @@ import Dashboard from './pages/Dashboard'
 import SetAlarm from './pages/SetAlarm'
 import AlarmRinging from './pages/AlarmRinging'
 import History from './pages/History'
+import Privacy from './pages/Privacy'
+import Terms from './pages/Terms'
 
 function App() {
   const {
@@ -48,6 +50,10 @@ function App() {
         return <AlarmRinging />
       case 'history':
         return <History />
+      case 'privacy':
+        return <Privacy />
+      case 'terms':
+        return <Terms />
       default:
         return <Welcome />
     }

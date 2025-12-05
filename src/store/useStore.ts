@@ -18,7 +18,7 @@ export interface Alarm {
   verificationCode?: string // Only available in test mode
 }
 
-export type Screen = 'welcome' | 'signup' | 'verify' | 'dashboard' | 'set-alarm' | 'alarm-ringing' | 'history'
+export type Screen = 'welcome' | 'signup' | 'verify' | 'dashboard' | 'set-alarm' | 'alarm-ringing' | 'history' | 'privacy' | 'terms'
 
 interface AppState {
   // UI State

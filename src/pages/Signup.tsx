@@ -168,11 +168,14 @@ export default function Signup() {
           <label>Phone Number</label>
           <input
             type="tel"
+            inputMode="tel"
+            pattern=".*"
             className="input"
             placeholder="(555) 555-5555"
             value={phoneNumber}
             onChange={handlePhoneChange}
             style={{ fontSize: '1.25rem', textAlign: 'center' }}
+            autoComplete="tel"
           />
         </div>
 

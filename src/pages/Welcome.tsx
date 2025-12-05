@@ -1,4 +1,5 @@
 import { useStore } from '../store/useStore'
+import type { Screen } from '../store/useStore'
 
 export default function Welcome() {
   const { setScreen, isAuthenticated } = useStore()
@@ -55,8 +56,35 @@ export default function Welcome() {
         </button>
 
         <p style={{ marginTop: '1.5rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-          Put your money where your snooze is 💸
+          Put your money where your snooze is
         </p>
+
+        <div style={{
+          marginTop: '3rem',
+          paddingTop: '1.5rem',
+          borderTop: '1px solid var(--border-color)',
+          fontSize: '0.8rem',
+          color: 'var(--text-muted)'
+        }}>
+          <p style={{ marginBottom: '0.5rem' }}>
+            By signing up, you consent to receive SMS messages and phone calls for alarm notifications.
+            Message frequency depends on alarms set. Msg & data rates may apply.
+          </p>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: '1.5rem' }}>
+            <button
+              onClick={() => setScreen('privacy' as Screen)}
+              style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '0.8rem' }}
+            >
+              Privacy Policy
+            </button>
+            <button
+              onClick={() => setScreen('terms' as Screen)}
+              style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '0.8rem' }}
+            >
+              Terms of Service
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   )
