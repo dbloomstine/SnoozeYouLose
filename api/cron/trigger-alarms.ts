@@ -1,71 +1,122 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import {
-  getPendingAlarmsToTrigger,
-  updateAlarmStatus,
-  getUserById
-} from '../lib/database'
-import { sendAlarmSMS, makeAlarmCall, isTwilioConfigured } from '../lib/twilio'
+import { createClient } from '@supabase/supabase-js'
+import twilio from 'twilio'
 
-// This endpoint should be called by a cron job every minute
-// In Vercel, you can use vercel.json to set up cron jobs
+const supabaseUrl = process.env.SUPABASE_URL
+const supabaseKey = process.env.SUPABASE_SERVICE_KEY
+const twilioSid = process.env.TWILIO_ACCOUNT_SID
+const twilioToken = process.env.TWILIO_AUTH_TOKEN
+const twilioPhone = process.env.TWILIO_PHONE_NUMBER
+
+function isTwilioConfigured(): boolean {
+  return !!(twilioSid && twilioToken && twilioPhone)
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Verify cron secret to prevent unauthorized access
+  // Verify cron secret OR allow Vercel cron (which sends specific headers)
   const cronSecret = req.headers['x-cron-secret']
-  if (cronSecret !== process.env.CRON_SECRET && process.env.NODE_ENV === 'production') {
+  const isVercelCron = req.headers['x-vercel-cron'] === '1'
+
+  if (!isVercelCron && cronSecret !== process.env.CRON_SECRET) {
     return res.status(401).json({ error: 'Unauthorized' })
   }
 
-  try {
-    // Get all pending alarms that should be triggered
-    const alarms = await getPendingAlarmsToTrigger()
+  if (!supabaseUrl || !supabaseKey) {
+    return res.status(500).json({ error: 'Database not configured' })
+  }
 
-    console.log(`Found ${alarms.length} alarms to trigger`)
+  try {
+    const supabase = createClient(supabaseUrl, supabaseKey)
+    const now = new Date().toISOString()
+
+    // Get all pending alarms that should be triggered
+    const { data: alarms, error: alarmsError } = await supabase
+      .from('alarms')
+      .select()
+      .eq('status', 'pending')
+      .lte('scheduled_for', now)
+
+    if (alarmsError) {
+      console.error('Error fetching alarms:', alarmsError)
+      return res.status(500).json({ error: alarmsError.message })
+    }
+
+    console.log(`Found ${alarms?.length || 0} alarms to trigger`)
 
     const results = []
 
-    for (const alarm of alarms) {
+    for (const alarm of alarms || []) {
       try {
         // Get user for phone number
-        const user = await getUserById(alarm.user_id)
+        const { data: user } = await supabase
+          .from('users')
+          .select()
+          .eq('id', alarm.user_id)
+          .single()
+
         if (!user) {
           console.error(`User not found for alarm ${alarm.id}`)
           continue
         }
 
         // Update alarm status to ringing
-        await updateAlarmStatus(alarm.id, 'ringing')
+        await supabase
+          .from('alarms')
+          .update({ status: 'ringing', updated_at: new Date().toISOString() })
+          .eq('id', alarm.id)
 
-        // Build webhook URL for call responses
-        const baseUrl = process.env.VERCEL_URL
-          ? `https://${process.env.VERCEL_URL}`
-          : 'http://localhost:3000'
-        const webhookUrl = `${baseUrl}/api/webhooks/twilio-call?alarmId=${alarm.id}`
+        let smsSuccess = false
+        let callSuccess = false
 
-        // Send SMS
-        const smsResult = await sendAlarmSMS(
-          user.phone_number,
-          alarm.verification_code,
-          alarm.stake_amount
-        )
+        if (isTwilioConfigured()) {
+          const client = twilio(twilioSid!, twilioToken!)
+          const phoneNumber = '+1' + user.phone_number.replace(/\D/g, '')
 
-        // Make call
-        const callResult = await makeAlarmCall(
-          user.phone_number,
-          alarm.verification_code,
-          alarm.stake_amount,
-          webhookUrl
-        )
+          // Send SMS
+          try {
+            const appUrl = 'https://snooze-you-lose.vercel.app'
+            await client.messages.create({
+              body: `WAKE UP! $${alarm.stake_amount} at stake!\n\nYour code: ${alarm.verification_code}\n\nOpen app: ${appUrl}\n\nOr reply with the code. 5 min to respond!`,
+              from: twilioPhone,
+              to: phoneNumber
+            })
+            smsSuccess = true
+          } catch (smsError: any) {
+            console.error('SMS error:', smsError.message)
+          }
+
+          // Make call
+          try {
+            const baseUrl = process.env.VERCEL_URL
+              ? `https://${process.env.VERCEL_URL}`
+              : 'https://snooze-you-lose.vercel.app'
+            const webhookUrl = `${baseUrl}/api/webhooks/twilio-call?alarmId=${alarm.id}`
+
+            const codeSpaced = alarm.verification_code.split('').join(' ')
+            await client.calls.create({
+              twiml: `
+                <Response>
+                  <Say voice="alice">Wake up! This is your Snooze You Lose alarm. You have ${alarm.stake_amount} dollars at stake. Your verification code is ${codeSpaced}. I repeat, your code is ${codeSpaced}.</Say>
+                  <Gather numDigits="4" action="${webhookUrl}" method="POST">
+                    <Say voice="alice">Enter your 4 digit code now.</Say>
+                  </Gather>
+                  <Say voice="alice">We didn't receive any input. Goodbye.</Say>
+                </Response>
+              `,
+              from: twilioPhone,
+              to: phoneNumber
+            })
+            callSuccess = true
+          } catch (callError: any) {
+            console.error('Call error:', callError.message)
+          }
+        }
 
         results.push({
           alarmId: alarm.id,
-          sms: smsResult.success,
-          call: callResult.success
+          sms: smsSuccess,
+          call: callSuccess
         })
-
-        // Schedule failure check (5 minutes from now)
-        // In production, you'd use a proper job queue like BullMQ or Vercel's cron
-        // For now, we'll handle this with another cron endpoint
 
         console.log(`Triggered alarm ${alarm.id} for user ${user.phone_number}`)
       } catch (error: any) {

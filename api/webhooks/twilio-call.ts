@@ -1,9 +1,16 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { getAlarmById, updateAlarmStatus, updateUserBalance, getUserById } from '../lib/database'
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseUrl = process.env.SUPABASE_URL
+const supabaseKey = process.env.SUPABASE_SERVICE_KEY
 
 // This webhook is called by Twilio when the user enters digits during a call
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (!supabaseUrl || !supabaseKey) {
+    return res.status(500).send(twimlResponse('Service unavailable'))
+  }
+
   try {
     const { alarmId } = req.query
     const { Digits } = req.body // Twilio sends the pressed digits in this field
@@ -12,7 +19,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).send(twimlResponse('Invalid alarm'))
     }
 
-    const alarm = await getAlarmById(alarmId)
+    const supabase = createClient(supabaseUrl, supabaseKey)
+
+    const { data: alarm } = await supabase
+      .from('alarms')
+      .select()
+      .eq('id', alarmId)
+      .single()
+
     if (!alarm) {
       return res.status(404).send(twimlResponse('Alarm not found'))
     }
@@ -23,15 +37,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Check if the entered digits match the verification code
     if (Digits === alarm.verification_code) {
-      // Success! Refund the stake
-      const user = await getUserById(alarm.user_id)
+      // Success! Get user and refund the stake
+      const { data: user } = await supabase
+        .from('users')
+        .select()
+        .eq('id', alarm.user_id)
+        .single()
+
       if (user) {
-        await updateUserBalance(user.id, user.wallet_balance + alarm.stake_amount)
+        await supabase
+          .from('users')
+          .update({
+            wallet_balance: user.wallet_balance + alarm.stake_amount,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', user.id)
       }
 
-      await updateAlarmStatus(alarm.id, 'acknowledged', {
-        acknowledged_at: new Date().toISOString()
-      })
+      await supabase
+        .from('alarms')
+        .update({
+          status: 'acknowledged',
+          acknowledged_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', alarm.id)
 
       return res.status(200).send(twimlResponse(
         `Correct! You're awake and you kept your ${alarm.stake_amount} dollars. Have a great day!`

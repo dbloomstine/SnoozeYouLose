@@ -1,26 +1,26 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { updateAlarmStatus } from '../lib/database'
 import { createClient } from '@supabase/supabase-js'
 
-// Check for alarms that have been ringing for more than 5 minutes and mark them as failed
+const supabaseUrl = process.env.SUPABASE_URL
+const supabaseKey = process.env.SUPABASE_SERVICE_KEY
 
+// Check for alarms that have been ringing for more than 5 minutes and mark them as failed
 const ALARM_TIMEOUT_MINUTES = 5
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Verify cron secret
+  // Verify cron secret OR allow Vercel cron
   const cronSecret = req.headers['x-cron-secret']
-  if (cronSecret !== process.env.CRON_SECRET && process.env.NODE_ENV === 'production') {
+  const isVercelCron = req.headers['x-vercel-cron'] === '1'
+
+  if (!isVercelCron && cronSecret !== process.env.CRON_SECRET) {
     return res.status(401).json({ error: 'Unauthorized' })
   }
 
+  if (!supabaseUrl || !supabaseKey) {
+    return res.status(200).json({ message: 'Database not configured, skipping' })
+  }
+
   try {
-    const supabaseUrl = process.env.SUPABASE_URL
-    const supabaseKey = process.env.SUPABASE_SERVICE_KEY
-
-    if (!supabaseUrl || !supabaseKey) {
-      return res.status(200).json({ message: 'Database not configured, skipping' })
-    }
-
     const supabase = createClient(supabaseUrl, supabaseKey)
 
     // Find alarms that have been ringing for too long
@@ -43,9 +43,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     for (const alarm of expiredAlarms || []) {
       try {
         // Mark alarm as failed - stake is already deducted, so it's lost
-        await updateAlarmStatus(alarm.id, 'failed', {
-          failed_at: new Date().toISOString()
-        })
+        await supabase
+          .from('alarms')
+          .update({
+            status: 'failed',
+            failed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', alarm.id)
 
         results.push({
           alarmId: alarm.id,

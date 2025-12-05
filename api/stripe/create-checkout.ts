@@ -1,39 +1,57 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { createClient } from '@supabase/supabase-js'
+import { jwtVerify } from 'jose'
 import Stripe from 'stripe'
-import { verify, getTokenFromHeader } from '../lib/jwt'
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
-  apiVersion: '2025-11-17.clover' as any
-})
+const supabaseUrl = process.env.SUPABASE_URL
+const supabaseKey = process.env.SUPABASE_SERVICE_KEY
+const jwtSecret = new TextEncoder().encode(process.env.JWT_SECRET || 'dev-secret-change-in-production')
+const stripeSecretKey = process.env.STRIPE_SECRET_KEY
 
-const AMOUNTS = [5, 10, 25, 50, 100]
+async function getAuthenticatedUser(req: VercelRequest) {
+  const authHeader = req.headers.authorization
+  if (!authHeader?.startsWith('Bearer ')) return null
+
+  const token = authHeader.slice(7)
+  try {
+    const { payload } = await jwtVerify(token, jwtSecret)
+    const userId = payload.userId as string
+    if (!userId || !supabaseUrl || !supabaseKey) return null
+
+    const supabase = createClient(supabaseUrl, supabaseKey)
+    const { data: user } = await supabase.from('users').select().eq('id', userId).single()
+    return user
+  } catch {
+    return null
+  }
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  // Verify auth
-  const token = getTokenFromHeader(req.headers.authorization)
-  if (!token) {
-    return res.status(401).json({ error: 'Unauthorized' })
-  }
-
-  const payload = await verify(token)
-  if (!payload) {
-    return res.status(401).json({ error: 'Invalid token' })
-  }
-
-  const { amount } = req.body
-
-  if (!amount || !AMOUNTS.includes(amount)) {
-    return res.status(400).json({ error: 'Invalid amount. Must be one of: ' + AMOUNTS.join(', ') })
+  if (!stripeSecretKey) {
+    return res.status(500).json({ error: 'Stripe not configured' })
   }
 
   try {
+    const user = await getAuthenticatedUser(req)
+    if (!user) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    const { amount } = req.body // Amount in dollars
+
+    if (!amount || amount < 1 || amount > 500) {
+      return res.status(400).json({ error: 'Amount must be between $1 and $500' })
+    }
+
+    const stripe = new Stripe(stripeSecretKey)
+
     const baseUrl = process.env.VERCEL_URL
       ? `https://${process.env.VERCEL_URL}`
-      : 'http://localhost:5173'
+      : 'https://snooze-you-lose.vercel.app'
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
@@ -42,26 +60,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           price_data: {
             currency: 'usd',
             product_data: {
-              name: `Add $${amount} to Snooze You Lose`,
-              description: 'Wallet funds for alarm stakes'
+              name: 'Snooze You Lose Wallet Funds',
+              description: `Add $${amount} to your wallet`,
             },
-            unit_amount: amount * 100 // Stripe uses cents
+            unit_amount: amount * 100, // Stripe uses cents
           },
-          quantity: 1
-        }
+          quantity: 1,
+        },
       ],
       mode: 'payment',
       success_url: `${baseUrl}/?payment=success`,
       cancel_url: `${baseUrl}/?payment=cancelled`,
       metadata: {
-        userId: payload.userId,
-        amount: amount.toString()
-      }
+        userId: user.id,
+        amount: amount.toString(),
+      },
     })
 
-    return res.status(200).json({ url: session.url })
+    return res.status(200).json({
+      sessionId: session.id,
+      url: session.url
+    })
   } catch (error: any) {
-    console.error('Stripe error:', error)
-    return res.status(500).json({ error: 'Failed to create checkout session' })
+    console.error('Stripe checkout error:', error)
+    return res.status(500).json({ error: error.message })
   }
 }

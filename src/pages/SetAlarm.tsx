@@ -89,18 +89,16 @@ export default function SetAlarm() {
           </label>
           <div className="time-picker">
             <input
-              type="number"
-              min="1"
-              max="12"
+              type="text"
+              inputMode="numeric"
               value={hours}
               onChange={(e) => handleHoursChange(e.target.value)}
               onFocus={(e) => e.target.select()}
             />
             <span className="separator">:</span>
             <input
-              type="number"
-              min="0"
-              max="59"
+              type="text"
+              inputMode="numeric"
               value={minutes}
               onChange={(e) => handleMinutesChange(e.target.value)}
               onFocus={(e) => e.target.select()}
@@ -185,13 +183,12 @@ export default function SetAlarm() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <span style={{ fontSize: '1.5rem', color: 'var(--text-secondary)' }}>$</span>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
                   className="input"
                   placeholder="Enter amount"
                   value={customStake}
-                  onChange={(e) => setCustomStake(e.target.value)}
-                  min="1"
-                  max={user.walletBalance}
+                  onChange={(e) => setCustomStake(e.target.value.replace(/\D/g, ''))}
                   style={{ flex: 1 }}
                 />
               </div>
