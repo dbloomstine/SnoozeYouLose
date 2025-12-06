@@ -9,13 +9,20 @@ export default function Dashboard() {
     activeAlarm,
     setScreen,
     cancelAlarm,
-    testTriggerAlarm,
+    triggerAlarm,
     alarmHistory,
-    addFunds,
     isTestMode,
     isLoading,
     logout
   } = useStore()
+
+  // Test mode: add funds directly to user balance
+  const addFunds = (amount: number) => {
+    if (!user) return
+    useStore.setState({
+      user: { ...user, walletBalance: user.walletBalance + amount }
+    })
+  }
 
   const [checkoutLoading, setCheckoutLoading] = useState<number | null>(null)
 
@@ -143,7 +150,7 @@ export default function Dashboard() {
               <button
                 className="btn btn-primary"
                 style={{ flex: 1 }}
-                onClick={testTriggerAlarm}
+                onClick={triggerAlarm}
                 disabled={isLoading}
               >
                 🔔 Test Ring
