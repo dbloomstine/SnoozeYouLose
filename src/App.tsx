@@ -10,6 +10,8 @@ import History from './pages/History'
 import Privacy from './pages/Privacy'
 import Terms from './pages/Terms'
 
+const POLL_INTERVAL = 5000 // 5 seconds
+
 function App() {
   const {
     currentScreen,
@@ -20,96 +22,75 @@ function App() {
     fetchAlarms,
     setScreen,
     activeAlarm,
-    testTriggerAlarm
+    triggerAlarm
   } = useStore()
 
-  // Track if we've already triggered for this alarm
   const triggeredAlarmId = useRef<string | null>(null)
   const isInitialized = useRef(false)
 
-  // Check URL params for deep links (e.g., from SMS)
+  // Handle deep links from SMS (e.g., ?alarm=ring)
   useEffect(() => {
+    if (!token) return
+
     const params = new URLSearchParams(window.location.search)
-    const alarmParam = params.get('alarm')
+    if (params.get('alarm') !== 'ring') return
 
-    if (alarmParam === 'ring' && token) {
-      // Clear the URL param
-      window.history.replaceState({}, '', window.location.pathname)
+    // Clear URL param
+    window.history.replaceState({}, '', window.location.pathname)
 
-      // Set token for API calls
-      api.setToken(token)
-
-      // Fetch alarms and navigate to ringing screen if alarm is active
-      fetchAlarms().then(() => {
-        const state = useStore.getState()
-        if (state.activeAlarm && ['pending', 'ringing'].includes(state.activeAlarm.status)) {
-          // Trigger the alarm if pending, or just go to ringing screen
-          if (state.activeAlarm.status === 'pending') {
-            testTriggerAlarm()
-          } else {
-            setScreen('alarm-ringing')
-          }
-        }
-      })
-    }
-  }, [token])
-
-  // Initialize on mount - restore session if token exists
-  useEffect(() => {
-    if (token && !isInitialized.current) {
-      isInitialized.current = true
-      api.setToken(token)
-      refreshUser()
-      fetchAlarms()
-
-      // If authenticated, make sure we're on a valid screen
-      if (isAuthenticated && currentScreen === 'welcome') {
-        setScreen('dashboard')
+    // Set token and fetch alarms
+    api.setToken(token)
+    fetchAlarms().then(() => {
+      const { activeAlarm } = useStore.getState()
+      if (activeAlarm?.status === 'pending') {
+        triggerAlarm()
+      } else if (activeAlarm?.status === 'ringing') {
+        setScreen('alarm-ringing')
       }
-    }
-  }, [token]) // Run when token changes (including hydration)
+    })
+  }, [token, fetchAlarms, triggerAlarm, setScreen])
 
-  // Check if alarm should trigger
+  // Initialize session on mount
+  useEffect(() => {
+    if (!token || isInitialized.current) return
+
+    isInitialized.current = true
+    api.setToken(token)
+    refreshUser()
+    fetchAlarms()
+
+    if (isAuthenticated && currentScreen === 'welcome') {
+      setScreen('dashboard')
+    }
+  }, [token, isAuthenticated, currentScreen, refreshUser, fetchAlarms, setScreen])
+
+  // Check and trigger alarm when time is reached
   const checkAlarmTrigger = useCallback(() => {
-    if (!activeAlarm) return
-    if (activeAlarm.status !== 'pending') return
+    if (!activeAlarm || activeAlarm.status !== 'pending') return
     if (triggeredAlarmId.current === activeAlarm.id) return
 
     const scheduledTime = new Date(activeAlarm.scheduledFor).getTime()
-    const now = Date.now()
-
-    // If scheduled time has passed, trigger the alarm
-    if (now >= scheduledTime) {
-      console.log('Alarm time reached, triggering...', {
-        scheduledFor: activeAlarm.scheduledFor,
-        scheduledTime,
-        now,
-        diff: now - scheduledTime
-      })
+    if (Date.now() >= scheduledTime) {
       triggeredAlarmId.current = activeAlarm.id
-      testTriggerAlarm()
+      triggerAlarm()
     }
-  }, [activeAlarm, testTriggerAlarm])
+  }, [activeAlarm, triggerAlarm])
 
-  // Poll for alarm trigger every 5 seconds
-  // Use token instead of isAuthenticated to avoid hydration race condition
+  // Poll for alarm trigger
   useEffect(() => {
     if (!token || !activeAlarm) return
 
-    // Check immediately
     checkAlarmTrigger()
 
-    // Then poll every 5 seconds
     const interval = setInterval(() => {
       checkAlarmTrigger()
-      // Also refresh alarms from server to sync state
       fetchAlarms()
-    }, 5000)
+    }, POLL_INTERVAL)
 
     return () => clearInterval(interval)
   }, [token, activeAlarm, checkAlarmTrigger, fetchAlarms])
 
-  // Reset triggered alarm ID when alarm changes
+  // Reset trigger tracking when alarm clears
   useEffect(() => {
     if (!activeAlarm) {
       triggeredAlarmId.current = null
@@ -141,13 +122,15 @@ function App() {
   }
 
   return (
-    <div className="app">
+    <div className="app" role="application" aria-label="Snooze You Lose">
       {isTestMode && (
-        <div className="test-banner">
+        <div className="test-banner" role="alert">
           TEST MODE - Using simulated money
         </div>
       )}
-      {renderScreen()}
+      <main>
+        {renderScreen()}
+      </main>
     </div>
   )
 }

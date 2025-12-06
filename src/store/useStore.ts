@@ -2,6 +2,8 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import * as api from '../lib/api'
 
+// ============ Types ============
+
 export interface User {
   id: string
   phoneNumber: string
@@ -15,51 +17,57 @@ export interface Alarm {
   status: 'pending' | 'ringing' | 'acknowledged' | 'failed' | 'cancelled'
   createdAt: string
   acknowledgedAt?: string
-  verificationCode?: string // Only available in test mode
+  verificationCode?: string
 }
 
-export type Screen = 'welcome' | 'signup' | 'verify' | 'dashboard' | 'set-alarm' | 'alarm-ringing' | 'history' | 'privacy' | 'terms'
+export type Screen =
+  | 'welcome'
+  | 'signup'
+  | 'verify'
+  | 'dashboard'
+  | 'set-alarm'
+  | 'alarm-ringing'
+  | 'history'
+  | 'privacy'
+  | 'terms'
 
 interface AppState {
   // UI State
   currentScreen: Screen
-  setScreen: (screen: Screen) => void
   isLoading: boolean
   error: string | null
-  clearError: () => void
 
   // Auth State
   user: User | null
   token: string | null
   isAuthenticated: boolean
+  isTestMode: boolean
 
-  // Auth Actions
-  sendCode: (phoneNumber: string) => Promise<{ success: boolean; testCode?: string }>
-  verifyCode: (phoneNumber: string, code: string) => Promise<boolean>
-  logout: () => void
-  refreshUser: () => Promise<void>
-
-  // Wallet
-  addFunds: (amount: number) => Promise<void>
+  // Verification flow
+  pendingPhone: string | null
+  testVerificationCode: string | null
 
   // Alarms
   activeAlarm: Alarm | null
   alarmHistory: Alarm[]
+
+  // Actions
+  setScreen: (screen: Screen) => void
+  clearError: () => void
+  setPendingPhone: (phone: string | null) => void
+  sendCode: (phoneNumber: string) => Promise<{ success: boolean; testCode?: string }>
+  verifyCode: (phoneNumber: string, code: string) => Promise<boolean>
+  logout: () => void
+  refreshUser: () => Promise<void>
   fetchAlarms: () => Promise<void>
   createAlarm: (time: string, stakeAmount: number, date?: string) => Promise<boolean>
   cancelAlarm: () => Promise<void>
   acknowledgeAlarm: (code: string) => Promise<boolean>
+  triggerAlarm: () => Promise<void>
   failAlarm: () => void
-
-  // Test mode
-  isTestMode: boolean
-  testTriggerAlarm: () => Promise<void>
-
-  // Verification state (for signup flow)
-  pendingPhone: string | null
-  setPendingPhone: (phone: string | null) => void
-  testVerificationCode: string | null
 }
+
+// ============ Store ============
 
 export const useStore = create<AppState>()(
   persist(
@@ -71,18 +79,22 @@ export const useStore = create<AppState>()(
       user: null,
       token: null,
       isAuthenticated: false,
-      activeAlarm: null,
-      alarmHistory: [],
       isTestMode: false,
       pendingPhone: null,
       testVerificationCode: null,
+      activeAlarm: null,
+      alarmHistory: [],
 
-      // UI Actions
+      // ============ UI Actions ============
+
       setScreen: (screen) => set({ currentScreen: screen }),
+
       clearError: () => set({ error: null }),
+
       setPendingPhone: (phone) => set({ pendingPhone: phone }),
 
-      // Auth Actions
+      // ============ Auth Actions ============
+
       sendCode: async (phoneNumber) => {
         set({ isLoading: true, error: null })
         try {
@@ -114,7 +126,7 @@ export const useStore = create<AppState>()(
             testVerificationCode: null
           })
           // Fetch alarms after login
-          setTimeout(() => get().fetchAlarms(), 100)
+          get().fetchAlarms()
           return true
         } catch (err: any) {
           set({ error: err.message, isLoading: false })
@@ -130,7 +142,8 @@ export const useStore = create<AppState>()(
           isAuthenticated: false,
           activeAlarm: null,
           alarmHistory: [],
-          currentScreen: 'welcome'
+          currentScreen: 'welcome',
+          error: null
         })
       },
 
@@ -140,31 +153,15 @@ export const useStore = create<AppState>()(
 
         try {
           const user = await api.getCurrentUser()
-          set({ user })
-        } catch (err) {
-          // Token might be invalid, log out
+          set({ user, isAuthenticated: true })
+        } catch {
+          // Token invalid, log out
           get().logout()
         }
       },
 
-      // Wallet
-      addFunds: async (amount) => {
-        set({ isLoading: true, error: null })
-        try {
-          const response = await api.addFunds(amount)
-          const { user } = get()
-          if (user) {
-            set({
-              user: { ...user, walletBalance: response.walletBalance },
-              isLoading: false
-            })
-          }
-        } catch (err: any) {
-          set({ error: err.message, isLoading: false })
-        }
-      },
+      // ============ Alarm Actions ============
 
-      // Alarms
       fetchAlarms: async () => {
         const { token } = get()
         if (!token) return
@@ -183,36 +180,30 @@ export const useStore = create<AppState>()(
             set({ currentScreen: 'alarm-ringing' })
           }
         } catch (err: any) {
-          console.error('Failed to fetch alarms:', err)
+          console.error('Failed to fetch alarms:', err.message)
         }
       },
 
       createAlarm: async (time, stakeAmount, date) => {
         set({ isLoading: true, error: null })
         try {
-          // Parse time and create scheduled date
           const [hours, minutes] = time.split(':').map(Number)
 
-          // Use provided date or default to today
           let scheduledFor: Date
           if (date) {
-            // Parse the date string (yyyy-MM-dd) and set the time
             const [year, month, day] = date.split('-').map(Number)
             scheduledFor = new Date(year, month - 1, day, hours, minutes, 0, 0)
           } else {
             scheduledFor = new Date()
             scheduledFor.setHours(hours, minutes, 0, 0)
-
-            // If time has passed today, schedule for tomorrow (fallback behavior)
             if (scheduledFor <= new Date()) {
               scheduledFor.setDate(scheduledFor.getDate() + 1)
             }
           }
 
           const response = await api.createAlarm(scheduledFor, stakeAmount)
-
-          // Update local state
           const { user } = get()
+
           if (user) {
             set({
               user: { ...user, walletBalance: user.walletBalance - stakeAmount },
@@ -230,20 +221,16 @@ export const useStore = create<AppState>()(
 
       cancelAlarm: async () => {
         const { activeAlarm, user } = get()
-        if (!activeAlarm) return
+        if (!activeAlarm || !user) return
 
         set({ isLoading: true, error: null })
         try {
           await api.cancelAlarm(activeAlarm.id)
-
-          // Refund stake to local state
-          if (user) {
-            set({
-              user: { ...user, walletBalance: user.walletBalance + activeAlarm.stakeAmount },
-              activeAlarm: null,
-              isLoading: false
-            })
-          }
+          set({
+            user: { ...user, walletBalance: user.walletBalance + activeAlarm.stakeAmount },
+            activeAlarm: null,
+            isLoading: false
+          })
         } catch (err: any) {
           set({ error: err.message, isLoading: false })
         }
@@ -251,25 +238,21 @@ export const useStore = create<AppState>()(
 
       acknowledgeAlarm: async (code) => {
         const { activeAlarm, user } = get()
-        if (!activeAlarm) return false
+        if (!activeAlarm || !user) return false
 
         set({ isLoading: true, error: null })
         try {
           await api.acknowledgeAlarm(activeAlarm.id, code)
-
-          // Refund stake and move to history
-          if (user) {
-            set({
-              user: { ...user, walletBalance: user.walletBalance + activeAlarm.stakeAmount },
-              activeAlarm: null,
-              alarmHistory: [
-                { ...activeAlarm, status: 'acknowledged', acknowledgedAt: new Date().toISOString() },
-                ...get().alarmHistory
-              ],
-              currentScreen: 'dashboard',
-              isLoading: false
-            })
-          }
+          set({
+            user: { ...user, walletBalance: user.walletBalance + activeAlarm.stakeAmount },
+            activeAlarm: null,
+            alarmHistory: [
+              { ...activeAlarm, status: 'acknowledged', acknowledgedAt: new Date().toISOString() },
+              ...get().alarmHistory
+            ],
+            currentScreen: 'dashboard',
+            isLoading: false
+          })
           return true
         } catch (err: any) {
           set({ error: err.message, isLoading: false })
@@ -277,84 +260,52 @@ export const useStore = create<AppState>()(
         }
       },
 
+      triggerAlarm: async () => {
+        const { activeAlarm } = get()
+        if (!activeAlarm) return
+
+        try {
+          const response = await api.triggerAlarm(activeAlarm.id)
+
+          if (response.success) {
+            set({
+              activeAlarm: {
+                ...activeAlarm,
+                status: 'ringing',
+                verificationCode: response.code
+              },
+              currentScreen: 'alarm-ringing'
+            })
+          } else {
+            // Alarm might already be ringing - fetch fresh data
+            await get().fetchAlarms()
+          }
+        } catch (err: any) {
+          // If trigger fails, still try to show ringing screen
+          // The alarm might already be ringing server-side
+          if (err.message.includes('pending')) {
+            await get().fetchAlarms()
+          } else {
+            set({
+              activeAlarm: { ...activeAlarm, status: 'ringing' },
+              currentScreen: 'alarm-ringing'
+            })
+          }
+        }
+      },
+
       failAlarm: () => {
-        const { activeAlarm, alarmHistory } = get()
+        const { activeAlarm } = get()
         if (!activeAlarm) return
 
         set({
           activeAlarm: null,
           alarmHistory: [
             { ...activeAlarm, status: 'failed' },
-            ...alarmHistory
+            ...get().alarmHistory
           ],
           currentScreen: 'dashboard'
         })
-      },
-
-      // Test mode - trigger alarm manually
-      testTriggerAlarm: async () => {
-        const { activeAlarm, token } = get()
-        if (!activeAlarm) return
-
-        try {
-          // Call the test trigger endpoint
-          const response = await fetch(`/api/alarms/${activeAlarm.id}/test-trigger`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            }
-          })
-
-          const data = await response.json()
-
-          if (data.success || data.code) {
-            // Successfully triggered - we have the code
-            set({
-              activeAlarm: {
-                ...activeAlarm,
-                status: 'ringing',
-                verificationCode: data.code
-              },
-              currentScreen: 'alarm-ringing'
-            })
-          } else if (data.error === 'Can only trigger pending alarms') {
-            // Alarm already ringing - fetch fresh alarm data to get the code
-            try {
-              const alarmsResponse = await api.getAlarms()
-              if (alarmsResponse.activeAlarm) {
-                set({
-                  activeAlarm: alarmsResponse.activeAlarm,
-                  currentScreen: 'alarm-ringing'
-                })
-              } else {
-                // Alarm might have expired or been handled
-                set({ currentScreen: 'dashboard' })
-                get().fetchAlarms()
-              }
-            } catch {
-              // Just go to ringing screen with what we have
-              set({
-                activeAlarm: { ...activeAlarm, status: 'ringing' },
-                currentScreen: 'alarm-ringing'
-              })
-            }
-          } else {
-            // Other error - just trigger locally
-            console.log('Trigger error:', data.error)
-            set({
-              activeAlarm: { ...activeAlarm, status: 'ringing' },
-              currentScreen: 'alarm-ringing'
-            })
-          }
-        } catch (err: any) {
-          console.error('testTriggerAlarm error:', err)
-          // Fallback for test mode - just set to ringing locally
-          set({
-            activeAlarm: { ...activeAlarm, status: 'ringing' },
-            currentScreen: 'alarm-ringing'
-          })
-        }
       }
     }),
     {

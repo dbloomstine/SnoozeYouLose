@@ -1,8 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.SUPABASE_URL
-const supabaseKey = process.env.SUPABASE_SERVICE_KEY
+import { getSupabaseClient, isConfigured } from '../lib/security'
 
 // Check for alarms that have been ringing for more than 5 minutes and mark them as failed
 const ALARM_TIMEOUT_MINUTES = 5
@@ -16,12 +13,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(401).json({ error: 'Unauthorized' })
   }
 
-  if (!supabaseUrl || !supabaseKey) {
+  if (!isConfigured()) {
     return res.status(200).json({ message: 'Database not configured, skipping' })
   }
 
   try {
-    const supabase = createClient(supabaseUrl, supabaseKey)
+    const supabase = getSupabaseClient()
 
     // Find alarms that have been ringing for too long
     const cutoffTime = new Date(Date.now() - ALARM_TIMEOUT_MINUTES * 60 * 1000).toISOString()
