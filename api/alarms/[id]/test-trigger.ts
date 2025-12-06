@@ -89,17 +89,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         : 'https://snooze-you-lose.vercel.app'
       const webhookUrl = `${baseUrl}/api/webhooks/twilio-call?alarmId=${alarm.id}`
 
+      // Format phone number to E.164 format
+      const digits = user.phone_number.replace(/\D/g, '')
+      const phoneNumber = digits.length === 10 ? `+1${digits}` : `+${digits}`
+
       // Send SMS and make call in parallel
-      await Promise.all([
-        // SMS
-        client.messages.create({
-          body: `🚨 WAKE UP! Your $${alarm.stake_amount} alarm is ringing! Enter code ${alarm.verification_code} to keep your money. You have 5 minutes!`,
-          from: twilioPhone,
-          to: user.phone_number
-        }),
-        // Voice call
-        client.calls.create({
-          twiml: `<?xml version="1.0" encoding="UTF-8"?>
+      try {
+        await Promise.all([
+          // SMS
+          client.messages.create({
+            body: `WAKE UP! Your $${alarm.stake_amount} alarm is ringing! Enter code ${alarm.verification_code} to keep your money. You have 5 minutes!`,
+            from: twilioPhone,
+            to: phoneNumber
+          }),
+          // Voice call
+          client.calls.create({
+            twiml: `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="alice">Wake up! This is your Snooze You Lose alarm. You have ${alarm.stake_amount} dollars on the line.</Say>
   <Gather numDigits="4" action="${webhookUrl}" method="POST">
@@ -107,10 +112,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   </Gather>
   <Say voice="alice">No input received. Your stake may be forfeited. Goodbye.</Say>
 </Response>`,
-          from: twilioPhone,
-          to: user.phone_number
-        })
-      ])
+            from: twilioPhone,
+            to: phoneNumber
+          })
+        ])
+      } catch (twilioError: any) {
+        console.error('Twilio error:', twilioError.message)
+        // Still return success since alarm was triggered, just SMS/call failed
+      }
     }
 
     return res.status(200).json({
