@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef, useCallback } from 'react'
 import { useStore } from './store/useStore'
 import * as api from './lib/api'
 import Welcome from './pages/Welcome'
@@ -18,8 +18,13 @@ function App() {
     isAuthenticated,
     refreshUser,
     fetchAlarms,
-    setScreen
+    setScreen,
+    activeAlarm,
+    testTriggerAlarm
   } = useStore()
+
+  // Track if we've already triggered for this alarm
+  const triggeredAlarmId = useRef<string | null>(null)
 
   // Initialize on mount - restore session if token exists
   useEffect(() => {
@@ -34,6 +39,47 @@ function App() {
       }
     }
   }, []) // Only run on mount
+
+  // Check if alarm should trigger
+  const checkAlarmTrigger = useCallback(() => {
+    if (!activeAlarm) return
+    if (activeAlarm.status !== 'pending') return
+    if (triggeredAlarmId.current === activeAlarm.id) return
+
+    const scheduledTime = new Date(activeAlarm.scheduledFor).getTime()
+    const now = Date.now()
+
+    // If scheduled time has passed, trigger the alarm
+    if (now >= scheduledTime) {
+      console.log('Alarm time reached, triggering...')
+      triggeredAlarmId.current = activeAlarm.id
+      testTriggerAlarm()
+    }
+  }, [activeAlarm, testTriggerAlarm])
+
+  // Poll for alarm trigger every 5 seconds
+  useEffect(() => {
+    if (!isAuthenticated || !activeAlarm) return
+
+    // Check immediately
+    checkAlarmTrigger()
+
+    // Then poll every 5 seconds
+    const interval = setInterval(() => {
+      checkAlarmTrigger()
+      // Also refresh alarms from server to sync state
+      fetchAlarms()
+    }, 5000)
+
+    return () => clearInterval(interval)
+  }, [isAuthenticated, activeAlarm, checkAlarmTrigger, fetchAlarms])
+
+  // Reset triggered alarm ID when alarm changes
+  useEffect(() => {
+    if (!activeAlarm) {
+      triggeredAlarmId.current = null
+    }
+  }, [activeAlarm])
 
   const renderScreen = () => {
     switch (currentScreen) {
