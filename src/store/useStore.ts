@@ -46,7 +46,7 @@ interface AppState {
   activeAlarm: Alarm | null
   alarmHistory: Alarm[]
   fetchAlarms: () => Promise<void>
-  createAlarm: (time: string, stakeAmount: number) => Promise<boolean>
+  createAlarm: (time: string, stakeAmount: number, date?: string) => Promise<boolean>
   cancelAlarm: () => Promise<void>
   acknowledgeAlarm: (code: string) => Promise<boolean>
   failAlarm: () => void
@@ -187,17 +187,26 @@ export const useStore = create<AppState>()(
         }
       },
 
-      createAlarm: async (time, stakeAmount) => {
+      createAlarm: async (time, stakeAmount, date) => {
         set({ isLoading: true, error: null })
         try {
           // Parse time and create scheduled date
           const [hours, minutes] = time.split(':').map(Number)
-          const scheduledFor = new Date()
-          scheduledFor.setHours(hours, minutes, 0, 0)
 
-          // If time has passed today, schedule for tomorrow
-          if (scheduledFor <= new Date()) {
-            scheduledFor.setDate(scheduledFor.getDate() + 1)
+          // Use provided date or default to today
+          let scheduledFor: Date
+          if (date) {
+            // Parse the date string (yyyy-MM-dd) and set the time
+            const [year, month, day] = date.split('-').map(Number)
+            scheduledFor = new Date(year, month - 1, day, hours, minutes, 0, 0)
+          } else {
+            scheduledFor = new Date()
+            scheduledFor.setHours(hours, minutes, 0, 0)
+
+            // If time has passed today, schedule for tomorrow (fallback behavior)
+            if (scheduledFor <= new Date()) {
+              scheduledFor.setDate(scheduledFor.getDate() + 1)
+            }
           }
 
           const response = await api.createAlarm(scheduledFor, stakeAmount)
