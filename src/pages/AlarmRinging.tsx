@@ -119,11 +119,22 @@ export default function AlarmRinging() {
       return
     }
 
+    setLocalError('')
     clearError()
     const success = await acknowledgeAlarm(enteredCode)
 
     if (!success) {
-      setLocalError('Wrong code! Check your phone.')
+      // Error will be set in the store, check it
+      const storeError = useStore.getState().error
+      if (storeError?.includes('not ringing')) {
+        setLocalError('Alarm expired. Refreshing...')
+        // Fetch fresh alarm state
+        setTimeout(() => {
+          useStore.getState().fetchAlarms()
+        }, 1000)
+      } else {
+        setLocalError(storeError || 'Wrong code! Check your phone.')
+      }
       setEnteredCode('')
     }
   }

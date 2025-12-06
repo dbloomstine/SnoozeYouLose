@@ -25,10 +25,39 @@ function App() {
 
   // Track if we've already triggered for this alarm
   const triggeredAlarmId = useRef<string | null>(null)
+  const isInitialized = useRef(false)
+
+  // Check URL params for deep links (e.g., from SMS)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const alarmParam = params.get('alarm')
+
+    if (alarmParam === 'ring' && token) {
+      // Clear the URL param
+      window.history.replaceState({}, '', window.location.pathname)
+
+      // Set token for API calls
+      api.setToken(token)
+
+      // Fetch alarms and navigate to ringing screen if alarm is active
+      fetchAlarms().then(() => {
+        const state = useStore.getState()
+        if (state.activeAlarm && ['pending', 'ringing'].includes(state.activeAlarm.status)) {
+          // Trigger the alarm if pending, or just go to ringing screen
+          if (state.activeAlarm.status === 'pending') {
+            testTriggerAlarm()
+          } else {
+            setScreen('alarm-ringing')
+          }
+        }
+      })
+    }
+  }, [token])
 
   // Initialize on mount - restore session if token exists
   useEffect(() => {
-    if (token) {
+    if (token && !isInitialized.current) {
+      isInitialized.current = true
       api.setToken(token)
       refreshUser()
       fetchAlarms()
@@ -38,7 +67,7 @@ function App() {
         setScreen('dashboard')
       }
     }
-  }, []) // Only run on mount
+  }, [token]) // Run when token changes (including hydration)
 
   // Check if alarm should trigger
   const checkAlarmTrigger = useCallback(() => {
@@ -51,15 +80,21 @@ function App() {
 
     // If scheduled time has passed, trigger the alarm
     if (now >= scheduledTime) {
-      console.log('Alarm time reached, triggering...')
+      console.log('Alarm time reached, triggering...', {
+        scheduledFor: activeAlarm.scheduledFor,
+        scheduledTime,
+        now,
+        diff: now - scheduledTime
+      })
       triggeredAlarmId.current = activeAlarm.id
       testTriggerAlarm()
     }
   }, [activeAlarm, testTriggerAlarm])
 
   // Poll for alarm trigger every 5 seconds
+  // Use token instead of isAuthenticated to avoid hydration race condition
   useEffect(() => {
-    if (!isAuthenticated || !activeAlarm) return
+    if (!token || !activeAlarm) return
 
     // Check immediately
     checkAlarmTrigger()
@@ -72,7 +107,7 @@ function App() {
     }, 5000)
 
     return () => clearInterval(interval)
-  }, [isAuthenticated, activeAlarm, checkAlarmTrigger, fetchAlarms])
+  }, [token, activeAlarm, checkAlarmTrigger, fetchAlarms])
 
   // Reset triggered alarm ID when alarm changes
   useEffect(() => {
