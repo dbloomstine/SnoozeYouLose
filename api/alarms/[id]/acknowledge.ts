@@ -1,36 +1,18 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { createClient } from '@supabase/supabase-js'
-import { jwtVerify } from 'jose'
-
-const supabaseUrl = process.env.SUPABASE_URL
-const supabaseKey = process.env.SUPABASE_SERVICE_KEY
-const jwtSecret = new TextEncoder().encode(process.env.JWT_SECRET || 'dev-secret-change-in-production')
-
-async function getAuthenticatedUser(req: VercelRequest) {
-  const authHeader = req.headers.authorization
-  if (!authHeader?.startsWith('Bearer ')) return null
-
-  const token = authHeader.slice(7)
-  try {
-    const { payload } = await jwtVerify(token, jwtSecret)
-    const userId = payload.userId as string
-    if (!userId || !supabaseUrl || !supabaseKey) return null
-
-    const supabase = createClient(supabaseUrl, supabaseKey)
-    const { data: user } = await supabase.from('users').select().eq('id', userId).single()
-    return user
-  } catch {
-    return null
-  }
-}
+import {
+  getAuthenticatedUser,
+  getSupabaseClient,
+  isConfigured,
+  checkRateLimit
+} from '../../lib/security'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  if (!supabaseUrl || !supabaseKey) {
-    return res.status(500).json({ error: 'Database not configured' })
+  if (!isConfigured()) {
+    return res.status(500).json({ error: 'Server not configured' })
   }
 
   try {
@@ -42,24 +24,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const { id } = req.query
     const { code } = req.body
 
-    if (typeof id !== 'string') {
+    // Validate alarm ID
+    if (typeof id !== 'string' || !id || !/^[a-zA-Z0-9-]+$/.test(id)) {
       return res.status(400).json({ error: 'Invalid alarm ID' })
     }
 
-    if (!code) {
-      return res.status(400).json({ error: 'Verification code is required' })
+    // Validate code format
+    if (!code || typeof code !== 'string' || !/^\d{4}$/.test(code)) {
+      return res.status(400).json({ error: 'Please enter a valid 4-digit code' })
     }
 
-    const supabase = createClient(supabaseUrl, supabaseKey)
+    // Rate limiting: max 10 acknowledgment attempts per alarm per 5 minutes
+    const rateLimit = checkRateLimit(`ack:${id}`, 10, 300)
+    if (!rateLimit.allowed) {
+      return res.status(429).json({ error: 'Too many attempts. Please wait and try again.' })
+    }
+
+    const supabase = getSupabaseClient()
 
     // Get the alarm
-    const { data: alarm } = await supabase
+    const { data: alarm, error: alarmError } = await supabase
       .from('alarms')
       .select()
       .eq('id', id)
       .single()
 
-    if (!alarm) {
+    if (alarmError || !alarm) {
       return res.status(404).json({ error: 'Alarm not found' })
     }
 
@@ -71,16 +61,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: 'Alarm is not ringing' })
     }
 
-    // Verify the code
-    if (alarm.verification_code !== code) {
+    // Verify the code (constant-time comparison to prevent timing attacks)
+    const codeMatch = alarm.verification_code.length === code.length &&
+      alarm.verification_code.split('').reduce((acc, char, i) => acc && char === code[i], true)
+
+    if (!codeMatch) {
       return res.status(400).json({ error: 'Invalid verification code' })
+    }
+
+    // Get fresh user balance to prevent race conditions
+    const { data: freshUser } = await supabase
+      .from('users')
+      .select('wallet_balance')
+      .eq('id', user.id)
+      .single()
+
+    if (!freshUser) {
+      return res.status(500).json({ error: 'Failed to process refund' })
     }
 
     // Refund the stake (they woke up!)
     await supabase
       .from('users')
       .update({
-        wallet_balance: user.wallet_balance + alarm.stake_amount,
+        wallet_balance: freshUser.wallet_balance + alarm.stake_amount,
         updated_at: new Date().toISOString()
       })
       .eq('id', user.id)
@@ -101,6 +105,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     })
   } catch (error: any) {
     console.error('Acknowledge alarm error:', error)
-    return res.status(500).json({ error: error.message })
+    return res.status(500).json({ error: 'An error occurred' })
   }
 }

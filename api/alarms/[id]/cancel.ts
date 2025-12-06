@@ -1,36 +1,17 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { createClient } from '@supabase/supabase-js'
-import { jwtVerify } from 'jose'
-
-const supabaseUrl = process.env.SUPABASE_URL
-const supabaseKey = process.env.SUPABASE_SERVICE_KEY
-const jwtSecret = new TextEncoder().encode(process.env.JWT_SECRET || 'dev-secret-change-in-production')
-
-async function getAuthenticatedUser(req: VercelRequest) {
-  const authHeader = req.headers.authorization
-  if (!authHeader?.startsWith('Bearer ')) return null
-
-  const token = authHeader.slice(7)
-  try {
-    const { payload } = await jwtVerify(token, jwtSecret)
-    const userId = payload.userId as string
-    if (!userId || !supabaseUrl || !supabaseKey) return null
-
-    const supabase = createClient(supabaseUrl, supabaseKey)
-    const { data: user } = await supabase.from('users').select().eq('id', userId).single()
-    return user
-  } catch {
-    return null
-  }
-}
+import {
+  getAuthenticatedUser,
+  getSupabaseClient,
+  isConfigured
+} from '../../lib/security'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  if (!supabaseUrl || !supabaseKey) {
-    return res.status(500).json({ error: 'Database not configured' })
+  if (!isConfigured()) {
+    return res.status(500).json({ error: 'Server not configured' })
   }
 
   try {
@@ -40,19 +21,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const { id } = req.query
-    if (typeof id !== 'string') {
+
+    // Validate alarm ID format
+    if (typeof id !== 'string' || !id || !/^[a-zA-Z0-9-]+$/.test(id)) {
       return res.status(400).json({ error: 'Invalid alarm ID' })
     }
 
-    const supabase = createClient(supabaseUrl, supabaseKey)
+    const supabase = getSupabaseClient()
 
-    const { data: alarm } = await supabase
+    const { data: alarm, error: alarmError } = await supabase
       .from('alarms')
       .select()
       .eq('id', id)
       .single()
 
-    if (!alarm) {
+    if (alarmError || !alarm) {
       return res.status(404).json({ error: 'Alarm not found' })
     }
 
@@ -64,11 +47,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: 'Can only cancel pending alarms' })
     }
 
+    // Get fresh user balance to prevent race conditions
+    const { data: freshUser } = await supabase
+      .from('users')
+      .select('wallet_balance')
+      .eq('id', user.id)
+      .single()
+
+    if (!freshUser) {
+      return res.status(500).json({ error: 'Failed to process refund' })
+    }
+
     // Refund the stake
     await supabase
       .from('users')
       .update({
-        wallet_balance: user.wallet_balance + alarm.stake_amount,
+        wallet_balance: freshUser.wallet_balance + alarm.stake_amount,
         updated_at: new Date().toISOString()
       })
       .eq('id', user.id)
@@ -88,6 +82,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     })
   } catch (error: any) {
     console.error('Cancel alarm error:', error)
-    return res.status(500).json({ error: error.message })
+    return res.status(500).json({ error: 'An error occurred' })
   }
 }

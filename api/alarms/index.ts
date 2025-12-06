@@ -1,42 +1,18 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { createClient } from '@supabase/supabase-js'
-import { jwtVerify } from 'jose'
-
-// Environment config
-const supabaseUrl = process.env.SUPABASE_URL
-const supabaseKey = process.env.SUPABASE_SERVICE_KEY
-const jwtSecret = new TextEncoder().encode(process.env.JWT_SECRET || 'dev-secret-change-in-production')
-
-function generateId(): string {
-  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
-}
-
-function generateCode(): string {
-  return Math.floor(1000 + Math.random() * 9000).toString()
-}
-
-async function getAuthenticatedUser(req: VercelRequest) {
-  const authHeader = req.headers.authorization
-  if (!authHeader?.startsWith('Bearer ')) return null
-
-  const token = authHeader.slice(7)
-  try {
-    const { payload } = await jwtVerify(token, jwtSecret)
-    const userId = payload.userId as string
-    if (!userId || !supabaseUrl || !supabaseKey) return null
-
-    const supabase = createClient(supabaseUrl, supabaseKey)
-    const { data: user } = await supabase.from('users').select().eq('id', userId).single()
-    return user
-  } catch {
-    return null
-  }
-}
+import {
+  getAuthenticatedUser,
+  getSupabaseClient,
+  generateSecureId,
+  generateVerificationCode,
+  validateStakeAmount,
+  validateScheduledTime,
+  isConfigured
+} from '../lib/security'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
-    if (!supabaseUrl || !supabaseKey) {
-      return res.status(500).json({ error: 'Database not configured' })
+    if (!isConfigured()) {
+      return res.status(500).json({ error: 'Server not configured' })
     }
 
     const user = await getAuthenticatedUser(req)
@@ -44,7 +20,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(401).json({ error: 'Unauthorized' })
     }
 
-    const supabase = createClient(supabaseUrl, supabaseKey)
+    const supabase = getSupabaseClient()
 
     // GET - List alarms
     if (req.method === 'GET') {
@@ -62,8 +38,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .single()
 
       return res.status(200).json({
-        alarms: (alarms || []).map(formatAlarm),
-        activeAlarm: activeAlarm ? formatAlarm(activeAlarm) : null
+        alarms: (alarms || []).map(a => formatAlarm(a, false)),
+        activeAlarm: activeAlarm ? formatAlarm(activeAlarm, activeAlarm.status === 'ringing') : null
       })
     }
 
@@ -71,22 +47,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === 'POST') {
       const { scheduledFor, stakeAmount } = req.body
 
-      if (!scheduledFor || !stakeAmount) {
-        return res.status(400).json({ error: 'scheduledFor and stakeAmount are required' })
+      // Validate scheduled time
+      if (!scheduledFor) {
+        return res.status(400).json({ error: 'scheduledFor is required' })
       }
 
-      if (stakeAmount <= 0) {
-        return res.status(400).json({ error: 'Stake amount must be positive' })
+      const timeValidation = validateScheduledTime(scheduledFor)
+      if (!timeValidation.valid) {
+        return res.status(400).json({ error: timeValidation.error })
       }
 
-      if (user.wallet_balance < stakeAmount) {
+      // Validate stake amount
+      const stakeValidation = validateStakeAmount(stakeAmount)
+      if (!stakeValidation.valid) {
+        return res.status(400).json({ error: stakeValidation.error })
+      }
+
+      const validatedStake = stakeValidation.value!
+
+      // Check balance (fetch fresh to prevent race conditions)
+      const { data: freshUser, error: userError } = await supabase
+        .from('users')
+        .select('wallet_balance')
+        .eq('id', user.id)
+        .single()
+
+      if (userError || !freshUser) {
+        return res.status(500).json({ error: 'Failed to verify balance' })
+      }
+
+      if (freshUser.wallet_balance < validatedStake) {
         return res.status(400).json({ error: 'Insufficient balance' })
       }
 
       // Check for existing active alarm
       const { data: existingAlarm } = await supabase
         .from('alarms')
-        .select()
+        .select('id')
         .eq('user_id', user.id)
         .in('status', ['pending', 'ringing'])
         .single()
@@ -95,20 +92,41 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ error: 'You already have an active alarm' })
       }
 
-      // Deduct stake from wallet
-      await supabase
+      // Create alarm with atomic balance update
+      // First deduct balance
+      const { error: updateError } = await supabase
         .from('users')
-        .update({ wallet_balance: user.wallet_balance - stakeAmount, updated_at: new Date().toISOString() })
+        .update({
+          wallet_balance: freshUser.wallet_balance - validatedStake,
+          updated_at: new Date().toISOString()
+        })
         .eq('id', user.id)
+        .eq('wallet_balance', freshUser.wallet_balance) // Optimistic lock
 
-      // Create alarm
+      if (updateError) {
+        return res.status(500).json({ error: 'Failed to process stake' })
+      }
+
+      // Verify the update actually happened (balance might have changed)
+      const { data: updatedUser } = await supabase
+        .from('users')
+        .select('wallet_balance')
+        .eq('id', user.id)
+        .single()
+
+      if (!updatedUser || updatedUser.wallet_balance !== freshUser.wallet_balance - validatedStake) {
+        // Race condition occurred, balance was changed by another request
+        return res.status(409).json({ error: 'Balance changed, please try again' })
+      }
+
+      // Create the alarm
       const alarm = {
-        id: generateId(),
+        id: generateSecureId(),
         user_id: user.id,
-        scheduled_for: new Date(scheduledFor).toISOString(),
-        stake_amount: stakeAmount,
+        scheduled_for: timeValidation.date!.toISOString(),
+        stake_amount: validatedStake,
         status: 'pending',
-        verification_code: generateCode(),
+        verification_code: generateVerificationCode(),
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       }
@@ -120,31 +138,52 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .single()
 
       if (createError) {
+        // Rollback: refund the stake
+        await supabase
+          .from('users')
+          .update({
+            wallet_balance: freshUser.wallet_balance,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', user.id)
+
         console.error('Create alarm error:', createError)
         return res.status(500).json({ error: 'Failed to create alarm' })
       }
 
       return res.status(201).json({
         success: true,
-        alarm: formatAlarm(createdAlarm)
+        alarm: formatAlarm(createdAlarm, false)
       })
     }
 
     return res.status(405).json({ error: 'Method not allowed' })
   } catch (error: any) {
     console.error('Alarms error:', error)
-    return res.status(500).json({ error: error.message })
+    return res.status(500).json({ error: 'An error occurred' })
   }
 }
 
-function formatAlarm(alarm: any) {
-  return {
+/**
+ * Format alarm for API response
+ * @param alarm - Raw alarm from database
+ * @param includeCode - Whether to include verification code (only when ringing)
+ */
+function formatAlarm(alarm: any, includeCode: boolean) {
+  const result: any = {
     id: alarm.id,
     scheduledFor: alarm.scheduled_for,
     stakeAmount: alarm.stake_amount,
     status: alarm.status,
-    verificationCode: alarm.verification_code,
     createdAt: alarm.created_at,
     acknowledgedAt: alarm.acknowledged_at
   }
+
+  // Only include verification code when alarm is actively ringing
+  // This prevents users from just looking up the code before the alarm
+  if (includeCode && alarm.status === 'ringing') {
+    result.verificationCode = alarm.verification_code
+  }
+
+  return result
 }
