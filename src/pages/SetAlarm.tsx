@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useStore } from '../store/useStore'
-import { format } from 'date-fns'
+import { format, addDays } from 'date-fns'
 
 const STAKE_OPTIONS = [1, 5, 10, 20, 50, 100]
 
@@ -14,9 +14,19 @@ export default function SetAlarm() {
   const [hours, setHours] = useState('07')
   const [minutes, setMinutes] = useState('00')
   const [isPM, setIsPM] = useState(false)
+  const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [selectedStake, setSelectedStake] = useState(5)
   const [customStake, setCustomStake] = useState('')
   const [useCustom, setUseCustom] = useState(false)
+
+  // Generate date options: today and next 6 days
+  const dateOptions = Array.from({ length: 7 }, (_, i) => {
+    const date = addDays(new Date(), i)
+    return {
+      value: format(date, 'yyyy-MM-dd'),
+      label: i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : format(date, 'EEE, MMM d')
+    }
+  })
 
   if (!user) {
     setScreen('welcome')
@@ -35,23 +45,31 @@ export default function SetAlarm() {
     return `${h.toString().padStart(2, '0')}:${minutes.padStart(2, '0')}`
   }
 
-  // Preview when the alarm will go off
+  // Preview when the alarm will go off (using selected date)
   const alarmPreview = useMemo(() => {
     const [h, m] = get24HourTime().split(':').map(Number)
-    const now = new Date()
-    const alarm = new Date()
-    alarm.setHours(h, m, 0, 0)
-    if (alarm <= now) {
-      alarm.setDate(alarm.getDate() + 1)
-    }
+    const [year, month, day] = selectedDate.split('-').map(Number)
+    const alarm = new Date(year, month - 1, day, h, m, 0, 0)
     return alarm
-  }, [hours, minutes, isPM])
+  }, [hours, minutes, isPM, selectedDate])
 
   const handleSetAlarm = async () => {
-    if (!canAfford || !isValidStake) return
+    if (!canAfford || !isValidStake || timePassedWarning) return
     const time = get24HourTime()
-    await createAlarm(time, currentStake)
+    await createAlarm(time, currentStake, selectedDate)
   }
+
+  // Check if selected time has already passed on selected date
+  const isTimePassedToday = () => {
+    if (selectedDate !== format(new Date(), 'yyyy-MM-dd')) return false
+    const now = new Date()
+    const [h, m] = get24HourTime().split(':').map(Number)
+    const selectedTime = new Date()
+    selectedTime.setHours(h, m, 0, 0)
+    return selectedTime <= now
+  }
+
+  const timePassedWarning = isTimePassedToday()
 
   const handleHoursChange = (value: string) => {
     const num = parseInt(value) || 0
@@ -148,6 +166,31 @@ export default function SetAlarm() {
           </p>
         </div>
 
+        {/* Date Selector */}
+        <div className="card" style={{ marginBottom: '20px' }}>
+          <label style={{ display: 'block', marginBottom: '12px', color: 'var(--text-secondary)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            📅 Date
+          </label>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
+            {dateOptions.slice(0, 4).map(option => (
+              <button
+                key={option.value}
+                onClick={() => setSelectedDate(option.value)}
+                className={`stake-option ${selectedDate === option.value ? 'selected' : ''}`}
+                style={{ padding: '14px 12px' }}
+              >
+                <div className="amount" style={{ fontSize: '0.95rem' }}>{option.label}</div>
+              </button>
+            ))}
+          </div>
+          {timePassedWarning && (
+            <div className="info-box" style={{ marginTop: '12px' }}>
+              <strong>⚠️ Time has passed</strong>
+              <p>This time has already passed today. Select a later time or choose tomorrow.</p>
+            </div>
+          )}
+        </div>
+
         {/* Stake Selector */}
         <div className="card" style={{ marginBottom: '20px' }}>
           <label style={{ display: 'block', marginBottom: '14px', color: 'var(--text-secondary)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
@@ -235,7 +278,7 @@ export default function SetAlarm() {
         <button
           className="btn btn-primary btn-large glow"
           onClick={handleSetAlarm}
-          disabled={!canAfford || !isValidStake || isLoading}
+          disabled={!canAfford || !isValidStake || isLoading || timePassedWarning}
         >
           {isLoading ? 'Setting Alarm...' : `🔔 Set Alarm - $${currentStake} at risk`}
         </button>
