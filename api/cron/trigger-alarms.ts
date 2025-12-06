@@ -1,15 +1,16 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
 import twilio from 'twilio'
+import { formatE164 } from '../lib/security'
 
-const supabaseUrl = process.env.SUPABASE_URL
-const supabaseKey = process.env.SUPABASE_SERVICE_KEY
-const twilioSid = process.env.TWILIO_ACCOUNT_SID
-const twilioToken = process.env.TWILIO_AUTH_TOKEN
-const twilioPhone = process.env.TWILIO_PHONE_NUMBER
+const SUPABASE_URL = process.env.SUPABASE_URL
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY
+const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID
+const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN
+const TWILIO_PHONE_NUMBER = process.env.TWILIO_PHONE_NUMBER
 
 function isTwilioConfigured(): boolean {
-  return !!(twilioSid && twilioToken && twilioPhone)
+  return !!(TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_PHONE_NUMBER)
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -21,12 +22,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(401).json({ error: 'Unauthorized' })
   }
 
-  if (!supabaseUrl || !supabaseKey) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
     return res.status(500).json({ error: 'Database not configured' })
   }
 
   try {
-    const supabase = createClient(supabaseUrl, supabaseKey)
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
     const now = new Date().toISOString()
 
     // Get all pending alarms that should be triggered
@@ -38,7 +39,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (alarmsError) {
       console.error('Error fetching alarms:', alarmsError)
-      return res.status(500).json({ error: alarmsError.message })
+      return res.status(500).json({ error: 'Failed to fetch alarms' })
     }
 
     console.log(`Found ${alarms?.length || 0} alarms to trigger`)
@@ -62,17 +63,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Update alarm status to ringing
         await supabase
           .from('alarms')
-          .update({ status: 'ringing', updated_at: new Date().toISOString() })
+          .update({
+            status: 'ringing',
+            triggered_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
           .eq('id', alarm.id)
 
         let smsSuccess = false
         let callSuccess = false
 
         if (isTwilioConfigured()) {
-          const client = twilio(twilioSid!, twilioToken!)
-          // Format phone number to E.164 format
-          const digits = user.phone_number.replace(/\D/g, '')
-          const phoneNumber = digits.length === 10 ? `+1${digits}` : `+${digits}`
+          const client = twilio(TWILIO_ACCOUNT_SID!, TWILIO_AUTH_TOKEN!)
+          const phoneNumber = formatE164(user.phone_number)
 
           // Deep link to open the app directly to alarm screen
           const appLink = 'https://snooze-you-lose.vercel.app?alarm=ring'
@@ -81,7 +84,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           try {
             await client.messages.create({
               body: `WAKE UP! $${alarm.stake_amount} on the line!\n\nCode: ${alarm.verification_code}\n\nTap to wake up: ${appLink}`,
-              from: twilioPhone,
+              from: TWILIO_PHONE_NUMBER,
               to: phoneNumber
             })
             smsSuccess = true
@@ -98,16 +101,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
             const codeSpaced = alarm.verification_code.split('').join(' ')
             await client.calls.create({
-              twiml: `
-                <Response>
-                  <Say voice="alice">Wake up! This is your Snooze You Lose alarm. You have ${alarm.stake_amount} dollars at stake. Your verification code is ${codeSpaced}. I repeat, your code is ${codeSpaced}.</Say>
-                  <Gather numDigits="4" action="${webhookUrl}" method="POST">
-                    <Say voice="alice">Enter your 4 digit code now.</Say>
-                  </Gather>
-                  <Say voice="alice">We didn't receive any input. Goodbye.</Say>
-                </Response>
-              `,
-              from: twilioPhone,
+              twiml: `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="alice">Wake up! This is your Snooze You Lose alarm. You have ${alarm.stake_amount} dollars at stake.</Say>
+  <Gather numDigits="4" action="${webhookUrl}" method="POST">
+    <Say voice="alice">Enter your 4 digit code now. Your code is ${codeSpaced}.</Say>
+  </Gather>
+  <Say voice="alice">We didn't receive any input. Goodbye.</Say>
+</Response>`,
+              from: TWILIO_PHONE_NUMBER,
               to: phoneNumber
             })
             callSuccess = true
@@ -122,7 +124,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           call: callSuccess
         })
 
-        console.log(`Triggered alarm ${alarm.id} for user ${user.phone_number}`)
+        console.log(`Triggered alarm ${alarm.id}`)
       } catch (error: any) {
         console.error(`Error triggering alarm ${alarm.id}:`, error)
         results.push({
@@ -139,6 +141,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     })
   } catch (error: any) {
     console.error('Trigger alarms error:', error)
-    return res.status(500).json({ error: error.message })
+    return res.status(500).json({ error: 'An error occurred' })
   }
 }

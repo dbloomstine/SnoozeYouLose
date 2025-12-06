@@ -102,29 +102,32 @@ export default function SetAlarm() {
 
         {/* Time Picker */}
         <div className="card" style={{ marginBottom: '20px' }}>
-          <label style={{ display: 'block', marginBottom: '12px', color: 'var(--text-secondary)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+          <div id="alarm-time-label" style={{ display: 'block', marginBottom: '12px', color: 'var(--text-secondary)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
             Alarm Time
-          </label>
-          <div className="time-picker">
+          </div>
+          <div className="time-picker" role="group" aria-labelledby="alarm-time-label">
             <input
               type="text"
               inputMode="numeric"
               value={hours}
               onChange={(e) => handleHoursChange(e.target.value)}
               onFocus={(e) => e.target.select()}
+              aria-label="Hours"
             />
-            <span className="separator">:</span>
+            <span className="separator" aria-hidden="true">:</span>
             <input
               type="text"
               inputMode="numeric"
               value={minutes}
               onChange={(e) => handleMinutesChange(e.target.value)}
               onFocus={(e) => e.target.select()}
+              aria-label="Minutes"
             />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginLeft: '8px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginLeft: '8px' }} role="group" aria-label="AM or PM">
               <button
                 type="button"
                 onClick={() => setIsPM(false)}
+                aria-pressed={!isPM}
                 style={{
                   padding: '12px 16px',
                   borderRadius: '12px',
@@ -142,6 +145,7 @@ export default function SetAlarm() {
               <button
                 type="button"
                 onClick={() => setIsPM(true)}
+                aria-pressed={isPM}
                 style={{
                   padding: '12px 16px',
                   borderRadius: '12px',
@@ -215,6 +219,7 @@ export default function SetAlarm() {
           <div style={{ marginTop: '18px' }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px', cursor: 'pointer' }}>
               <input
+                id="use-custom-stake"
                 type="checkbox"
                 checked={useCustom}
                 onChange={(e) => setUseCustom(e.target.checked)}
@@ -224,7 +229,7 @@ export default function SetAlarm() {
             </label>
             {useCustom && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ fontSize: '1.5rem', color: 'var(--text-secondary)' }}>$</span>
+                <span aria-hidden="true" style={{ fontSize: '1.5rem', color: 'var(--text-secondary)' }}>$</span>
                 <input
                   type="text"
                   inputMode="numeric"
@@ -233,6 +238,7 @@ export default function SetAlarm() {
                   value={customStake}
                   onChange={(e) => setCustomStake(e.target.value.replace(/\D/g, ''))}
                   style={{ flex: 1 }}
+                  aria-label="Custom stake amount in dollars"
                 />
               </div>
             )}

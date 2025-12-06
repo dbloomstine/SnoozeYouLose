@@ -1,23 +1,14 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
-import { SignJWT } from 'jose'
+import {
+  generateSecureId,
+  signToken,
+  validatePhoneNumber,
+  checkRateLimit
+} from '../lib/security'
 
-// Environment config
-const supabaseUrl = process.env.SUPABASE_URL
-const supabaseKey = process.env.SUPABASE_SERVICE_KEY
-const jwtSecret = new TextEncoder().encode(process.env.JWT_SECRET || 'dev-secret-change-in-production')
-
-function generateId(): string {
-  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
-}
-
-async function signToken(payload: { userId: string }): Promise<string> {
-  return new SignJWT(payload)
-    .setProtectedHeader({ alg: 'HS256' })
-    .setIssuedAt()
-    .setExpirationTime('30d')
-    .sign(jwtSecret)
-}
+const SUPABASE_URL = process.env.SUPABASE_URL
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -27,21 +18,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const { phoneNumber, code } = req.body
 
-    if (!phoneNumber || !code) {
-      return res.status(400).json({ error: 'Phone number and code are required' })
+    // Validate inputs
+    const validatedPhone = validatePhoneNumber(phoneNumber)
+    if (!validatedPhone) {
+      return res.status(400).json({ error: 'Invalid phone number' })
     }
 
-    if (!supabaseUrl || !supabaseKey) {
-      return res.status(500).json({ error: 'Database not configured' })
+    if (!code || typeof code !== 'string' || !/^\d{4}$/.test(code)) {
+      return res.status(400).json({ error: 'Please enter a valid 4-digit code' })
     }
 
-    const supabase = createClient(supabaseUrl, supabaseKey)
+    // Rate limiting: max 10 verification attempts per phone per 15 minutes
+    // Prevents brute force attacks on the 4-digit code
+    const rateLimit = checkRateLimit(`verify:${validatedPhone}`, 10, 900)
+    if (!rateLimit.allowed) {
+      return res.status(429).json({
+        error: 'Too many attempts. Please request a new code.'
+      })
+    }
+
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+      return res.status(500).json({ error: 'Server not configured' })
+    }
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
     // Verify the code
     const { data: verification, error: verifyError } = await supabase
       .from('verifications')
       .select()
-      .eq('phone_number', phoneNumber)
+      .eq('phone_number', validatedPhone)
       .eq('code', code)
       .eq('verified', false)
       .gt('expires_at', new Date().toISOString())
@@ -52,23 +58,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // Mark as verified
-    await supabase.from('verifications').update({ verified: true }).eq('id', verification.id)
+    await supabase
+      .from('verifications')
+      .update({ verified: true })
+      .eq('id', verification.id)
 
     // Get or create user
     let { data: user } = await supabase
       .from('users')
       .select()
-      .eq('phone_number', phoneNumber)
+      .eq('phone_number', validatedPhone)
       .single()
 
     if (!user) {
       const newUser = {
-        id: generateId(),
-        phone_number: phoneNumber,
+        id: generateSecureId(),
+        phone_number: validatedPhone,
         wallet_balance: 0, // Users must add real funds via Stripe
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       }
+
       const { data: createdUser, error: createError } = await supabase
         .from('users')
         .insert(newUser)
@@ -77,13 +87,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       if (createError) {
         console.error('Create user error:', createError)
-        return res.status(500).json({ error: 'Failed to create user' })
+        return res.status(500).json({ error: 'Failed to create account' })
       }
       user = createdUser
     }
 
     // Generate JWT token
-    const token = await signToken({ userId: user.id })
+    let token: string
+    try {
+      token = await signToken({ userId: user.id })
+    } catch (tokenError) {
+      console.error('Token generation error:', tokenError)
+      return res.status(500).json({ error: 'Authentication failed. Please contact support.' })
+    }
 
     return res.status(200).json({
       success: true,
@@ -96,6 +112,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     })
   } catch (error: any) {
     console.error('Verify error:', error)
-    return res.status(500).json({ error: error.message })
+    return res.status(500).json({ error: 'An error occurred. Please try again.' })
   }
 }

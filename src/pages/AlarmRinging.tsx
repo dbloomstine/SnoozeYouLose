@@ -207,21 +207,22 @@ export default function AlarmRinging() {
             fontSize: '1.2rem',
             color: soundEnabled ? 'var(--text-primary)' : 'var(--text-muted)'
           }}
-          title={soundEnabled ? 'Mute alarm' : 'Unmute alarm'}
+          aria-label={soundEnabled ? 'Mute alarm sound' : 'Unmute alarm sound'}
+          aria-pressed={soundEnabled}
         >
           {soundEnabled ? '🔊' : '🔇'}
         </button>
 
         {/* Countdown */}
-        <div className="countdown-display">
+        <div className="countdown-display" role="timer" aria-live="polite" aria-atomic="true">
           <div style={{ color: 'var(--text-secondary)', marginBottom: '8px', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '1px' }}>
             Time remaining
           </div>
-          <div className={`countdown-time ${isUrgent ? 'urgent' : ''}`}>
+          <div className={`countdown-time ${isUrgent ? 'urgent' : ''}`} aria-label={`${minutes} minutes and ${seconds} seconds remaining`}>
             {minutes}:{seconds.toString().padStart(2, '0')}
           </div>
           {isUrgent && (
-            <div style={{ color: 'var(--danger)', fontSize: '0.9rem', marginTop: '8px', fontWeight: '600' }}>
+            <div style={{ color: 'var(--danger)', fontSize: '0.9rem', marginTop: '8px', fontWeight: '600' }} role="alert">
               HURRY! Less than a minute left!
             </div>
           )}
@@ -248,10 +249,11 @@ export default function AlarmRinging() {
             </div>
           )}
 
-          <label style={{ display: 'block', marginBottom: '10px', fontWeight: '600', fontSize: '0.9rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+          <label htmlFor="verification-code" style={{ display: 'block', marginBottom: '10px', fontWeight: '600', fontSize: '0.9rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
             Enter verification code
           </label>
           <input
+            id="verification-code"
             type="text"
             inputMode="numeric"
             className="input input-large"
@@ -264,9 +266,10 @@ export default function AlarmRinging() {
               clearError()
             }}
             autoFocus
+            aria-describedby={displayError ? 'code-error' : undefined}
           />
           {displayError && (
-            <p style={{ color: 'var(--accent)', marginTop: '12px', fontWeight: '600' }}>{displayError}</p>
+            <p id="code-error" role="alert" style={{ color: 'var(--accent)', marginTop: '12px', fontWeight: '600' }}>{displayError}</p>
           )}
         </div>
 
