@@ -309,6 +309,7 @@ export const useStore = create<AppState>()(
           const data = await response.json()
 
           if (data.success || data.code) {
+            // Successfully triggered - we have the code
             set({
               activeAlarm: {
                 ...activeAlarm,
@@ -317,14 +318,37 @@ export const useStore = create<AppState>()(
               },
               currentScreen: 'alarm-ringing'
             })
+          } else if (data.error === 'Can only trigger pending alarms') {
+            // Alarm already ringing - fetch fresh alarm data to get the code
+            try {
+              const alarmsResponse = await api.getAlarms()
+              if (alarmsResponse.activeAlarm) {
+                set({
+                  activeAlarm: alarmsResponse.activeAlarm,
+                  currentScreen: 'alarm-ringing'
+                })
+              } else {
+                // Alarm might have expired or been handled
+                set({ currentScreen: 'dashboard' })
+                get().fetchAlarms()
+              }
+            } catch {
+              // Just go to ringing screen with what we have
+              set({
+                activeAlarm: { ...activeAlarm, status: 'ringing' },
+                currentScreen: 'alarm-ringing'
+              })
+            }
           } else {
-            // Fallback - just trigger locally
+            // Other error - just trigger locally
+            console.log('Trigger error:', data.error)
             set({
               activeAlarm: { ...activeAlarm, status: 'ringing' },
               currentScreen: 'alarm-ringing'
             })
           }
         } catch (err: any) {
+          console.error('testTriggerAlarm error:', err)
           // Fallback for test mode - just set to ringing locally
           set({
             activeAlarm: { ...activeAlarm, status: 'ringing' },

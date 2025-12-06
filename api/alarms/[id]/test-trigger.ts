@@ -93,12 +93,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const digits = user.phone_number.replace(/\D/g, '')
       const phoneNumber = digits.length === 10 ? `+1${digits}` : `+${digits}`
 
+      // Deep link to open the app directly to alarm screen
+      const appLink = 'https://snooze-you-lose.vercel.app?alarm=ring'
+
       // Send SMS and make call in parallel
       try {
         await Promise.all([
-          // SMS
+          // SMS with clickable link
           client.messages.create({
-            body: `WAKE UP! Your $${alarm.stake_amount} alarm is ringing! Enter code ${alarm.verification_code} to keep your money. You have 5 minutes!`,
+            body: `WAKE UP! $${alarm.stake_amount} on the line!\n\nCode: ${alarm.verification_code}\n\nTap to wake up: ${appLink}`,
             from: twilioPhone,
             to: phoneNumber
           }),

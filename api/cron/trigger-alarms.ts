@@ -70,13 +70,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         if (isTwilioConfigured()) {
           const client = twilio(twilioSid!, twilioToken!)
-          const phoneNumber = '+1' + user.phone_number.replace(/\D/g, '')
+          // Format phone number to E.164 format
+          const digits = user.phone_number.replace(/\D/g, '')
+          const phoneNumber = digits.length === 10 ? `+1${digits}` : `+${digits}`
+
+          // Deep link to open the app directly to alarm screen
+          const appLink = 'https://snooze-you-lose.vercel.app?alarm=ring'
 
           // Send SMS
           try {
-            const appUrl = 'https://snooze-you-lose.vercel.app'
             await client.messages.create({
-              body: `WAKE UP! $${alarm.stake_amount} at stake!\n\nYour code: ${alarm.verification_code}\n\nOpen app: ${appUrl}\n\nOr reply with the code. 5 min to respond!`,
+              body: `WAKE UP! $${alarm.stake_amount} on the line!\n\nCode: ${alarm.verification_code}\n\nTap to wake up: ${appLink}`,
               from: twilioPhone,
               to: phoneNumber
             })
